@@ -1,0 +1,31 @@
+[project]
+name = "kie"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aioboto3>=13.2.1",
+    "asyncpg>=0.31.0",
+    "celery>=5.3.0",
+    "google-adk>=1.21.0",
+    "litellm>=1.80.10",
+    "pdfplumber>=0.11.8",
+    "pgvector>=0.4.2",
+    "python-docx>=1.2.0",
+    "redis>=5.0.0",
+    "sqlalchemy>=2.0.45",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "moto>=5.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "asyncio: marks tests as async (deselect with '-m \"not asyncio\"')",
+]
