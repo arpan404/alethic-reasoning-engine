@@ -1,7 +1,8 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
+from sqlalchemy import text, event
+from pgvector.asyncpg import register_vector
 
 # Get env vars
 POSTGRES_USER = os.getenv("POSTGRES_USER", "koru")
@@ -13,6 +14,10 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 engine = create_async_engine(DATABASE_URL, echo=False)
+
+@event.listens_for(engine.sync_engine, "connect")
+def connect(dbapi_connection, connection_record):
+    dbapi_connection.run_async(register_vector)
 
 AsyncSessionLocal = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
