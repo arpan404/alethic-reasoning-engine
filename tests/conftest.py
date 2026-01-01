@@ -3,8 +3,12 @@
 from io import BytesIO
 import os
 import pytest
+import tempfile
+from pathlib import Path
 from docx import Document
 from docx.shared import Pt
+from PIL import Image
+import io
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -69,3 +73,29 @@ def _create_test_docx(
     doc.save(stream)
     stream.seek(0)
     return stream
+
+
+def _create_pdf_with_image() -> bytes:
+    """Create a minimal PDF with an embedded image for testing.
+
+    Note: This creates a simple PDF structure. For more realistic testing,
+    you may need to use a library like reportlab to create proper PDFs with images.
+    """
+    # Create a simple test image
+    img = Image.new("RGB", (100, 100), color="red")
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="PNG")
+    img_bytes.seek(0)
+
+    # For testing purposes, we'll create a minimal PDF structure
+    # In practice, pdfplumber needs a proper PDF with image XObjects
+    # This is a simplified version - real implementation may need reportlab
+    pdf = _create_minimal_pdf("PDF with image")
+    return pdf
+
+
+@pytest.fixture
+def temp_output_dir():
+    """Fixture providing a temporary directory for test output."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield tmpdir

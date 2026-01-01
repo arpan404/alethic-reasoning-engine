@@ -1,4 +1,5 @@
 """Worker script to run Celery workers."""
+
 import sys
 import logging
 from celery_app import app
@@ -16,6 +17,7 @@ if __name__ == "__main__":
             "worker",
             "--loglevel=info",
             "--concurrency=4",
-            "-Q", "default,document_processing,s3_operations",
+            "-Q",
+            "default,document_processing,s3_operations",
         ]
     )

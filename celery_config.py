@@ -1,4 +1,5 @@
 """Celery configuration for async task processing."""
+
 from kombu import Exchange, Queue
 from os import environ
 

@@ -153,3 +153,51 @@ def test_prepare_stream_closed_stream():
     stream.close()
     with pytest.raises(ValueError, match="file_stream is closed"):
         dp_module._prepare_stream(stream)
+
+
+def test_extract_images_from_pdf_no_images(temp_output_dir):
+    """Test image extraction from PDF with no images."""
+    pdf_data = _create_minimal_pdf("Text only PDF")
+    stream = BytesIO(pdf_data)
+
+    result = dp_module.extract_images_from_pdf(stream, output_dir=temp_output_dir)
+    assert isinstance(result, list)
+    assert len(result) == 0
+
+
+def test_extract_images_from_pdf_creates_output_dir(temp_output_dir):
+    """Test that output directory is created if it doesn't exist."""
+    import os
+    from pathlib import Path
+
+    pdf_data = _create_minimal_pdf("Test PDF")
+    stream = BytesIO(pdf_data)
+
+    # Use a subdirectory that doesn't exist yet
+    output_path = Path(temp_output_dir) / "new_subdir"
+    assert not output_path.exists()
+
+    result = dp_module.extract_images_from_pdf(stream, output_dir=str(output_path))
+
+    # Directory should be created even if no images were extracted
+    assert output_path.exists()
+    assert output_path.is_dir()
+
+
+def test_extract_images_from_pdf_default_dir():
+    """Test that default output directory is used when not specified."""
+    import shutil
+    from pathlib import Path
+
+    pdf_data = _create_minimal_pdf("Test PDF")
+    stream = BytesIO(pdf_data)
+
+    try:
+        result = dp_module.extract_images_from_pdf(stream)
+        assert isinstance(result, list)
+        # Default directory should be created
+        assert Path("extracted_images").exists()
+    finally:
+        # Cleanup default directory if it was created
+        if Path("extracted_images").exists():
+            shutil.rmtree("extracted_images")
