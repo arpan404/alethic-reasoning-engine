@@ -21,22 +21,33 @@ def _get_credentials() -> dict:
     }
 
 
-async def get_file_from_s3(bucket_name: str, key: str) -> BytesIO:
+async def download_s3_file(
+    bucket_name: str,
+    key: str,
+    output_dir: Path,
+):
     """
-    Get file from S3 and return as BytesIO stream.
+    Download file from S3 and save it to the specified output directory.
 
     Args:
         bucket_name (str): Name of the S3 bucket
         key (str): Key of the file in the S3 bucket
+        output_dir (Path): Directory to save the downloaded file
     """
-    assert bucket_name, "Bucket name must be provided"
-    assert key, "Key must be provided"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    file_path = output_dir / Path(key).name
 
     session = aioboto3.Session(**_get_credentials())
     async with session.client("s3") as client:
         response = await client.get_object(Bucket=bucket_name, Key=key)
-        body_bytes = await response["Body"].read()
-        return BytesIO(body_bytes)
+
+        async with response["Body"] as stream:
+            with open(file_path, "wb") as f:
+                while chunk := await stream.read(8192):
+                    f.write(chunk)
+
+    return file_path
+
 
 
 async def cache_file_from_s3(bucket_name: str, key: str, cache_path: str) -> None:
