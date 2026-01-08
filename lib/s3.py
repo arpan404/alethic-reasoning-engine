@@ -49,7 +49,6 @@ async def download_s3_file(
     return file_path
 
 
-
 async def cache_file_from_s3(bucket_name: str, key: str, cache_path: str) -> None:
     """
     Download file from S3 and cache it locally.

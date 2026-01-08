@@ -1,7 +1,9 @@
-from pathlib import Path  
+from pathlib import Path
 from sqlalchemy import select
 from database.models.applications import Applications
-from lib.s3 import get_file_from_s3 
+from lib.s3 import get_file_from_s3
+
+
 async def get_applicant_resume(application_id: int) -> Path:
     """
     Returns the resume of the applicant with the given application id.
@@ -28,12 +30,13 @@ async def get_applicant_resume(application_id: int) -> Path:
         file = result.scalar_one_or_none()
         if file is None:
             raise ValueError(f"File not found for name {resume_file_name}")
-        
+
         resume_file = await get_file_from_s3("resume", file.key)
         return resume_file
-        
+
     except Exception as e:
         raise ValueError(f"Error getting resume for application {application_id}: {e}")
+
 
 async def get_resume_text(resume_file: Path) -> str:
     """
