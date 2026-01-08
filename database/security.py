@@ -8,12 +8,13 @@ This module provides comprehenshensive and security utilities for:
 - Data encryption (at rest and in transit)
 """
 
-from sqlalchemy import event
+from sqlalchemy import column, event
 from enum import Enum as PyEnum
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Literal
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Union, Literal, TypeVar
 import hashlib
 from os import getenv
+
 # =======================================
 # Constants used across this module
 # =======================================
@@ -21,7 +22,9 @@ HASH_SALT = getenv("HASH_SALT", "default_salt")
 
 # asserting that the required salt is set
 if HASH_SALT == "default_salt":
-    raise EnvironmentError("HASH_SALT environment variable must be set for security module.")
+    raise EnvironmentError(
+        "HASH_SALT environment variable must be set for security module."
+    )
 
 
 # =======================================
@@ -90,8 +93,9 @@ class DataRetentionPeriod(str, PyEnum):
 # Column Security Metadata
 # =======================================
 
+
 def compliance_column(
-    sensitvity: DataSensitivity= DataSensitivity.CONFIDENTIAL,
+    sensitvity: DataSensitivity = DataSensitivity.CONFIDENTIAL,
     encryption: EncryptionType = EncryptionType.AT_REST,
     pii: bool = False,
     gdpr_relevant: bool = False,
@@ -101,7 +105,7 @@ def compliance_column(
     requires_consents: bool = False,
     retention_period: Optional[DataRetentionPeriod] = None,
     anonymize_on_deletion: bool = False,
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """
     Mark a column with compliance metadata.
@@ -120,9 +124,9 @@ def compliance_column(
     - soc2_critical: Whether the column is critical for SOC2 compliance.
     - mask_in_logs: Whether to mask this column in logs and error messages.
 
-    Usage: 
+    Usage:
         email: Mapped[str] = mapped_column(
-            String(255), 
+            String(255),
             info = compliance_column(
                     sensitvity=DataSensitivity.CONFIDENTIAL,
                     encryption=EncryptionType.AT_REST,
@@ -143,7 +147,6 @@ def compliance_column(
         "encryption": encryption.value,
         "soc2_critical": soc2_critical,
         "mask_in_logs": mask_in_logs,
-
         # GDPR Metadata
         "pii": pii,
         "gdpr_relevant": gdpr_relevant,
@@ -151,7 +154,7 @@ def compliance_column(
         "requires_consents": requires_consents,
         "retention_period": retention_period.value if retention_period else None,
         "anonymize_on_deletion": anonymize_on_deletion,
-        **kwargs
+        **kwargs,
     }
 
 
@@ -159,7 +162,8 @@ def compliance_column(
 # Data Masking Utilities
 # =======================================
 
-def mask_sensitive_data(value:str, visible_chars: int = 4) -> str:
+
+def mask_sensitive_data(value: str, visible_chars: int = 4) -> str:
     """
     Masks sensitive data by showing only the last `visible_chars` characters.
 
@@ -173,6 +177,7 @@ def mask_sensitive_data(value:str, visible_chars: int = 4) -> str:
     if not value or len(value) <= visible_chars:
         return "*" * len(value)
     return "*" * (len(value) - visible_chars) + value[-visible_chars:]
+
 
 def mask_email(email: str) -> str:
     """
@@ -196,6 +201,7 @@ def mask_email(email: str) -> str:
     except Exception:
         return mask_sensitive_data(email)
 
+
 def mask_phone(phone: str) -> str:
     """
     Masks a phone number by showing only the last 4 digits.
@@ -208,8 +214,9 @@ def mask_phone(phone: str) -> str:
     """
     if not phone or len(phone) < 4:
         return "*" * len(phone)
-    
+
     return mask_sensitive_data(phone, visible_chars=4)
+
 
 def mask_ip_address(ip: str) -> str:
     """
@@ -229,13 +236,14 @@ def mask_ip_address(ip: str) -> str:
         return ".".join(parts)
     except Exception:
         return mask_sensitive_data(ip)
-    
+
 
 # =======================================
 # Anonymization Utilities
 # =======================================
 
-def anonymize_email(user_id:int)-> str:
+
+def anonymize_email(user_id: int) -> str:
     """
     Generates an anonymized email address for a user based on their user ID.
 
@@ -247,7 +255,8 @@ def anonymize_email(user_id:int)-> str:
     """
     return f"user{user_id}@anonymized.alethic.ai"
 
-def anonymize_name()-> str:
+
+def anonymize_name() -> str:
     """
     Returns a generic anonymized name.
 
@@ -256,7 +265,8 @@ def anonymize_name()-> str:
     """
     return "Anonymized User"
 
-def hash_for_analytics(value:str, salt:str= HASH_SALT) -> str:
+
+def hash_for_analytics(value: str, salt: str = HASH_SALT) -> str:
     """
     Hashes a value with a static salt for anonymized analytics.
 
@@ -270,3 +280,291 @@ def hash_for_analytics(value:str, salt:str= HASH_SALT) -> str:
     hasher = hashlib.sha256()
     hasher.update(f"{salt}{value}".encode("utf-8"))
     return hasher.hexdigest()
+
+
+# =======================================
+# Compliance Mixin Classes
+# =======================================
+GT = TypeVar("GT", bound="GDPRComplianceMixin")
+
+
+class GDPRComplianceMixin:
+    """
+    Mixin for GDPR-compliant models.
+
+    Provides methods for handling data subject requests,
+    data retention, and anonymization.
+    """
+
+    @classmethod
+    def get_pii_fields(cls: GT) -> List[str]:
+        """
+        Returns a list of PII fields in the model.
+
+        Returns:
+            List[str]: List of PII field names.
+        """
+        pii_fields = []
+        for column in cls.__tble__.columns:
+            if hasattr(column.info, "pii") and column.info.get("pii"):
+                pii_fields.append(column.name)
+        return pii_fields
+
+    @classmethod
+    def get_gdpr_relevant_fields(cls: GT) -> List[str]:
+        """
+        Returns a list of GDPR-relevant fields in the model.
+
+        Returns:
+            List[str]: List of GDPR-relevant field names.
+        """
+        gdpr_fields = []
+        for column in cls.__table__.columns:
+            if (
+                hasattr(column, "info")
+                and hasattr(column.info, "gdpr_relevant")
+                and column.info.get("gdpr_relevant")
+            ):
+                gdpr_fields.append(column.name)
+        return gdpr_fields
+
+    @classmethod
+    def get_fields_by_category(cls: GT, category: GDPRDataCategory) -> List[str]:
+        """
+        Returns a list of fields in the model for a given GDPR data category.
+
+        Args:
+            category (GDPRDataCategory): The GDPR data category.
+        Returns:
+            List[str]: List of field names in the given category.
+        """
+        category_fields = []
+        for column in cls.__table__.columns:
+            if (
+                hasattr(column.info, "gdpr_category")
+                and column.info.get("gdpr_category") == category.value
+            ):
+                category_fields.append(column.name)
+        return category_fields
+
+    def export_gdpr_data(self: GT, mask_sensitive: bool = True) -> Dict[str, Any]:
+        """
+        Exports GDPR-relevant data for the instance.
+
+        Args:
+            mask_sensitive (bool): Whether to mask sensitive data.
+        Returns:
+            Dict[str, Any]: The exported GDPR data.
+        """
+        gdpr_fields = self.get_gdpr_relevant_fields()
+        result_data = {}
+
+        for field in gdpr_fields:
+            value = getattr(self, field, None)
+
+            if mask_sensitive and hasattr(self.__table__.columns[field], "info"):
+                column_info = self.__table__.columns[field].info
+                if column_info.get("sensitivity") == DataSensitivity.RESTRICTED.value:
+                    if "email" in field:
+                        value = mask_email(value)
+                    elif "phone" in field:
+                        value = mask_phone(value)
+                    elif "ip" in field:
+                        value = mask_ip_address(value)
+                    else:
+                        value = mask_sensitive_data(value)
+            result_data[field] = value
+
+        return result_data
+
+    def anonymize_gdpr_data(self: GT) -> None:
+        """
+        Anonymize GDPR data for right to erasure compliance.
+        Keeps record for audit purposes but removes PII.
+        """
+        pii_fields = self.get_pii_fields()
+
+        for field in pii_fields:
+            column = self.__table__.columns[field]
+            if hasattr(column, "info") and column.info.get("anonymize_on_deletion"):
+                if "email" in field.lower():
+                    setattr(self, field, anonymize_email(self.id))
+                elif "name" in field.lower():
+                    setattr(self, field, anonymize_name())
+                elif field in ["phone", "phone_number"]:
+                    setattr(self, field, None)
+                else:
+                    setattr(self, field, None)
+
+
+ST = TypeVar("ST", bound="SOC2ComplianceMixin")
+
+
+class SOC2ComplianceMixin:
+    """
+    Mixin for SOC2-compliant models.
+
+    Provides methods for handling:
+    - Data classification
+    - Access logging
+    - Change tracking
+    - Encryption verification
+    """
+
+    @classmethod
+    def get_sensitive_fields(cls: ST) -> Dict[str, str]:
+        """
+        Returns a dictionary of sensitive fields and their sensitivity levels.
+
+        Returns:
+            Dict[str, str]: Dictionary of field names and sensitivity levels.
+        """
+        sensitive_fields = {}
+        for column in cls.__table__.columns:
+            if hasattr(column, "info") and hasattr(column.info, "sensitivity"):
+                sensitivity = column.info.get("sensitivity")
+                if sensitivity and sensitivity != DataSensitivity.PUBLIC.value:
+                    sensitive_fields[column.name] = sensitivity
+        return sensitive_fields
+
+    @classmethod
+    def get_encrypted_fields(cls: ST) -> Dict[str, str]:
+        """
+        Returns a dictionary of fields and their encryption types.
+
+        Returns:
+            Dict[str, str]: Dictionary of field names and encryption types.
+        """
+        encrypted_fields = {}
+        for column in cls.__table__.columns:
+            if hasattr(column, "info") and hasattr(column.info, "encryption"):
+                encryption = column.info.get("encryption")
+                if encryption and encryption != EncryptionType.NONE.value:
+                    encrypted_fields[column.name] = encryption
+        return encrypted_fields
+
+    @classmethod
+    def get_soc2_critical_fields(cls: ST) -> List[str]:
+        """
+        Returns a list of SOC2-critical fields in the model.
+
+        Returns:
+            List[str]: List of SOC2-critical field names.
+        """
+        critical_fields = []
+        for column in cls.__table__.columns:
+            if (
+                hasattr(column, "info")
+                and hasattr(column.info, "soc2_critical")
+                and column.info.get("soc2_critical")
+            ):
+                critical_fields.append(column.name)
+        return critical_fields
+
+    def to_dict_masked(self: ST, mask_sensitive: bool = True) -> Dict[str, Any]:
+        """
+        Converts model to dictionaly, masking sensitive fields if specified.
+
+        Args:
+            mask_sensitive (bool): Whether to mask sensitive fields.
+        Returns:
+            Dict[str, Any]: The model data as a dictionary.
+        """
+        result_data = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if mask_sensitive and hasattr(column, "info"):
+                column_info = column.info
+                if column_info.get("mask_in_logs") and value:
+                    if "@" in str(value):
+                        value = mask_email(str(value))
+                    elif "phone" in column.name.lower():
+                        value = mask_phone(str(value))
+                    elif "ip" in column.name.lower():
+                        value = mask_ip_address(str(value))
+                    else:
+                        value = mask_sensitive_data(str(value))
+            result_data[column.name] = value
+        return result_data
+
+
+class ComplianceMixin(GDPRComplianceMixin, SOC2ComplianceMixin):
+    """
+    Mixin combining GDPR and SOC2 compliance features.
+    """
+
+    pass
+
+
+# =======================================
+# Consent Management
+# =======================================
+class ConsentRecord:
+    """
+    Represents a user consent record for GDPR compliance.
+    """
+
+    def __init__(
+        self,
+        user_id: int,
+        consent_type: ConsentType,
+        granted: bool,
+    ):
+        self.user_id = user_id
+        self.consent_type = consent_type
+        self.granted = granted
+        self.granted_at = datetime.now(timezone.utc) if granted else None
+        self.revoked_at = None if granted else datetime.now(timezone.utc)
+
+    def revoke_consent(self) -> None:
+        """
+        Revoke the consent.
+        """
+        self.granted = False
+        self.revoked_at = datetime.now(timezone.utc)
+
+
+# =======================================
+# Data Retention Utilities
+# =======================================
+def get_retention_date(period: DataRetentionPeriod) -> datetime:
+    """
+    Calculate the data retention date based on the retention period.
+    Args:
+        period (DataRetentionPeriod): The data retention period.
+    Returns:
+        datetime: The calculated retention date.
+    """
+    retention_mapping = {
+        DataRetentionPeriod.ONE_MONTH: timedelta(days=30),
+        DataRetentionPeriod.THREE_MONTHS: timedelta(days=90),
+        DataRetentionPeriod.SIX_MONTHS: timedelta(days=180),
+        DataRetentionPeriod.ONE_YEAR: timedelta(days=365),
+        DataRetentionPeriod.TWO_YEARS: timedelta(days=730),
+        DataRetentionPeriod.THREE_YEARS: timedelta(days=1095),
+        DataRetentionPeriod.FIVE_YEARS: timedelta(days=1825),
+        DataRetentionPeriod.SEVEN_YEARS: timedelta(days=2555),
+        DataRetentionPeriod.INDEFINITE: None,
+    }
+    delta = retention_mapping.get(period)
+    if delta is None:
+        return None
+
+    return datetime.now(timezone.utc) + delta
+
+def should_retain(created_at: datetime, period: DataRetentionPeriod) -> bool:
+    """
+    Determine if data should be retained based on its creation date and retention period.
+
+    Args:
+        created_at (datetime): The creation date of the data.
+        period (DataRetentionPeriod): The data retention period.
+
+    Returns:
+        bool: True if data should be retained, False if it can be deleted.
+    """
+    expiration = get_retention_date(period)
+    if expiration is None:
+        return True  # Indefinite retention
+
+    return datetime.now(timezone.utc) < (created_at + (expiration - datetime.now(timezone.utc)))
