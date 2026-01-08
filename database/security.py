@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, TypeVar
 import hashlib
 from os import getenv
+from cryptography.fernet import Fernet, InvalidToken
 
 # =======================================
 # Constants used across this module
@@ -568,3 +569,99 @@ def should_retain(created_at: datetime, period: DataRetentionPeriod) -> bool:
         return True  # Indefinite retention
 
     return datetime.now(timezone.utc) < (created_at + (expiration - datetime.now(timezone.utc)))
+
+# =======================================
+# Cryptographic Utilities
+# =======================================
+class CryptoUtils:
+    """
+    Utility class for data encryption and decryption, hashing, and key management.
+    """
+
+    @staticmethod
+    def encrypt(value:str, key: bytes | None = None)-> str:
+        """
+        Encrypts a value using Fernet symmetric encryption.
+
+        Args:
+            value: Plain text value to encrypt
+            key: Encryption key (32 bytes for Fernet)
+            
+        Returns:
+            Base64-encoded encrypted value
+        """
+        if value is None:
+            return None
+        if key is None:
+            raise ValueError("Encryption key must be provided")
+        try: 
+            cipher = Fernet(key)
+            encrypted = cipher.encrypt(value.encode('utf-8'))
+            return encrypted.decode('utf-8')
+        except InvalidToken as e:
+            raise ValueError("Invalid encryption key") from e
+        except Exception as e:
+            raise ValueError(f"Encryption failed") from e
+
+    @staticmethod
+    def decrypt(token: str, key: bytes | None = None) -> str | None:
+        """
+        Decrypts a Fernet-encrypted value.
+
+        Args:
+            token: Base64-encoded encrypted string
+            key: Fernet key (URL-safe base64-encoded 32-byte key)
+
+        Returns:
+            Decrypted plaintext string or None
+        """
+        if token is None:
+            return None
+
+        if key is None:
+            raise ValueError("Decryption key is required")
+
+        try:
+            cipher = Fernet(key)
+            decrypted = cipher.decrypt(token.encode("utf-8"))
+            return decrypted.decode("utf-8")
+        except InvalidToken as e:
+            # Wrong key, corrupted data, or tampering
+            raise ValueError("Invalid or corrupted encrypted value") from e
+        except (ValueError, TypeError) as e:
+            raise ValueError("Decryption failed") from e
+
+    @staticmethod
+    def generate_key() -> bytes:
+        """
+        Generates a new Fernet encryption key.
+
+        Returns:
+            bytes: The generated key.
+        """
+        return Fernet.generate_key()
+
+    @staticmethod
+    def hash_value(value:str, algorithm:str = "sha256")-> str:
+        """
+        Hashes a value using the specified algorithm.
+
+        Args:
+            value: The value to hash
+            algorithm: The hashing algorithm (e.g., 'sha256', 'md5')
+
+        Returns:
+            The hexadecimal hash string
+        """
+        hasher = hashlib.new(algorithm)
+        hasher.update(value.encode('utf-8'))
+        return hasher.hexdigest()
+
+# =======================================
+# Audit Trail Decorator
+# =======================================
+
+def audit_changes(model_class):
+    """
+    Decorator to automatically log changes for SOC2 Compliance.
+    """

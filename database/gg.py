@@ -15,6 +15,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import hashlib
 import json
+from sqlalchemy.orm import object_session
+from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet
 
 
 # ============================================================================
@@ -456,10 +460,52 @@ def audit_changes(model_class):
 
     @event.listens_for(model_class, "before_update")
     def receive_before_update(mapper, connection, target):
-        # Log changes to audit_logs table
-        # This would integrate with your audit logging system
-        pass
-
+        """Log changes to audit trail for SOC 2 compliance."""
+        # Get the current state and committed state
+        
+        session = object_session(target)
+        if not session:
+            return
+        
+        # Get changed attributes
+        changes = {}
+        for column in mapper.columns:
+            current_value = getattr(target, column.name)
+            committed_value = session.get_committed_state(target).get(column.name)
+            
+            if current_value != committed_value:
+                # Mask sensitive data in audit log
+                if hasattr(column, "info") and column.info.get("mask_in_logs"):
+                    if "@" in str(committed_value or ""):
+                        old_value = mask_email(str(committed_value))
+                        new_value = mask_email(str(current_value))
+                    elif "phone" in column.name.lower():
+                        old_value = mask_phone(str(committed_value or ""))
+                        new_value = mask_phone(str(current_value or ""))
+                    else:
+                        old_value = mask_sensitive_data(str(committed_value or ""))
+                        new_value = mask_sensitive_data(str(current_value or ""))
+                else:
+                    old_value = committed_value
+                    new_value = current_value
+                
+                changes[column.name] = {
+                    "old": old_value,
+                    "new": new_value,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+        
+        # Store audit trail (integrate with your audit logging system)
+        if changes:
+            audit_entry = {
+                "entity_type": model_class.__name__,
+                "entity_id": getattr(target, "id", None),
+                "action": "UPDATE",
+                "changes": changes,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            # TODO: Save audit_entry to audit_logs table or external audit service
+    
     return model_class
 
 
@@ -469,19 +515,72 @@ def audit_changes(model_class):
 
 
 class EncryptionHelper:
-    """Helper for field-level encryption (implement with your encryption library)."""
+    """Helper for field-level encryption using Fernet symmetric encryption."""
 
     @staticmethod
     def encrypt(value: str, key: bytes) -> str:
-        """Encrypt a value (implement with Fernet or similar)."""
-        # Placeholder - implement with cryptography.fernet
-        return value
+        """
+        Encrypt a value using Fernet (symmetric encryption).
+        
+        Args:
+            value: Plain text value to encrypt
+            key: Encryption key (32 bytes for Fernet)
+            
+        Returns:
+            Base64-encoded encrypted value
+        """
+        if not value:
+            return value
+            
+        try:
+            cipher = Fernet(key)
+            encrypted = cipher.encrypt(value.encode())
+            return encrypted.decode()
+        except Exception as e:
+            raise ValueError(f"Encryption failed: {str(e)}")
 
     @staticmethod
     def decrypt(encrypted_value: str, key: bytes) -> str:
-        """Decrypt a value."""
-        # Placeholder - implement with cryptography.fernet
-        return encrypted_value
+        """
+        Decrypt a Fernet-encrypted value.
+        
+        Args:
+            encrypted_value: Base64-encoded encrypted value
+            key: Encryption key (32 bytes for Fernet)
+            
+        Returns:
+            Decrypted plain text value
+        """
+        if not encrypted_value:
+            return encrypted_value
+            
+        try:
+            cipher = Fernet(key)
+            decrypted = cipher.decrypt(encrypted_value.encode())
+            return decrypted.decode()
+        except Exception as e:
+            raise ValueError(f"Decryption failed: {str(e)}")
+
+    @staticmethod
+    def generate_key() -> bytes:
+        """Generate a new Fernet encryption key."""
+        return Fernet.generate_key()
+
+    @staticmethod
+    def hash_value(value: str, algorithm: str = "sha256") -> str:
+        """
+        One-way hash for searchable encryption.
+        
+        Args:
+            value: Value to hash
+            algorithm: Hash algorithm (sha256, sha512, etc.)
+            
+        Returns:
+            Hexadecimal hash digest
+        """
+        if not value:
+            return value
+        return hashlib.new(algorithm, value.encode()).hexdigest()
 
 
 # ============================================================================
