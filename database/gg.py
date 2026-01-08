@@ -462,17 +462,17 @@ def audit_changes(model_class):
     def receive_before_update(mapper, connection, target):
         """Log changes to audit trail for SOC 2 compliance."""
         # Get the current state and committed state
-        
+
         session = object_session(target)
         if not session:
             return
-        
+
         # Get changed attributes
         changes = {}
         for column in mapper.columns:
             current_value = getattr(target, column.name)
             committed_value = session.get_committed_state(target).get(column.name)
-            
+
             if current_value != committed_value:
                 # Mask sensitive data in audit log
                 if hasattr(column, "info") and column.info.get("mask_in_logs"):
@@ -488,13 +488,13 @@ def audit_changes(model_class):
                 else:
                     old_value = committed_value
                     new_value = current_value
-                
+
                 changes[column.name] = {
                     "old": old_value,
                     "new": new_value,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
                 }
-        
+
         # Store audit trail (integrate with your audit logging system)
         if changes:
             audit_entry = {
@@ -502,10 +502,10 @@ def audit_changes(model_class):
                 "entity_id": getattr(target, "id", None),
                 "action": "UPDATE",
                 "changes": changes,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
             # TODO: Save audit_entry to audit_logs table or external audit service
-    
+
     return model_class
 
 
@@ -521,17 +521,17 @@ class EncryptionHelper:
     def encrypt(value: str, key: bytes) -> str:
         """
         Encrypt a value using Fernet (symmetric encryption).
-        
+
         Args:
             value: Plain text value to encrypt
             key: Encryption key (32 bytes for Fernet)
-            
+
         Returns:
             Base64-encoded encrypted value
         """
         if not value:
             return value
-            
+
         try:
             cipher = Fernet(key)
             encrypted = cipher.encrypt(value.encode())
@@ -543,17 +543,17 @@ class EncryptionHelper:
     def decrypt(encrypted_value: str, key: bytes) -> str:
         """
         Decrypt a Fernet-encrypted value.
-        
+
         Args:
             encrypted_value: Base64-encoded encrypted value
             key: Encryption key (32 bytes for Fernet)
-            
+
         Returns:
             Decrypted plain text value
         """
         if not encrypted_value:
             return encrypted_value
-            
+
         try:
             cipher = Fernet(key)
             decrypted = cipher.decrypt(encrypted_value.encode())
@@ -570,11 +570,11 @@ class EncryptionHelper:
     def hash_value(value: str, algorithm: str = "sha256") -> str:
         """
         One-way hash for searchable encryption.
-        
+
         Args:
             value: Value to hash
             algorithm: Hash algorithm (sha256, sha512, etc.)
-            
+
         Returns:
             Hexadecimal hash digest
         """

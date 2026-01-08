@@ -8,7 +8,7 @@ This module provides comprehenshensive and security utilities for:
 - Data encryption (at rest and in transit)
 """
 
-from sqlalchemy import column, event
+from sqlalchemy import column, event, inspect
 from enum import Enum as PyEnum
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, TypeVar
@@ -556,6 +556,7 @@ def get_retention_date(period: DataRetentionPeriod) -> datetime:
 
     return datetime.now(timezone.utc) + delta
 
+
 def should_retain(created_at: datetime, period: DataRetentionPeriod) -> bool:
     """
     Determine if data should be retained based on its creation date and retention period.
@@ -571,7 +572,10 @@ def should_retain(created_at: datetime, period: DataRetentionPeriod) -> bool:
     if expiration is None:
         return True  # Indefinite retention
 
-    return datetime.now(timezone.utc) < (created_at + (expiration - datetime.now(timezone.utc)))
+    return datetime.now(timezone.utc) < (
+        created_at + (expiration - datetime.now(timezone.utc))
+    )
+
 
 # =======================================
 # Cryptographic Utilities
@@ -614,14 +618,14 @@ class CryptoUtils:
         )
 
     @staticmethod
-    def encrypt(value:str, key: bytes | str | None = None)-> str:
+    def encrypt(value: str, key: bytes | str | None = None) -> str:
         """
         Encrypts a value using AES-256-GCM.
 
         Args:
             value: Plain text value to encrypt
             key: 32-byte AES key (raw bytes or URL-safe base64 encoded)
-            
+
         Returns:
             URL-safe base64 encoded ciphertext containing nonce + ciphertext + tag
         """
@@ -680,7 +684,7 @@ class CryptoUtils:
         return urlsafe_b64encode(key)
 
     @staticmethod
-    def hash_value(value:str, algorithm:str = "sha256")-> str:
+    def hash_value(value: str, algorithm: str = "sha256") -> str:
         """
         Hashes a value using the specified algorithm.
 
@@ -692,14 +696,111 @@ class CryptoUtils:
             The hexadecimal hash string
         """
         hasher = hashlib.new(algorithm)
-        hasher.update(value.encode('utf-8'))
+        hasher.update(value.encode("utf-8"))
         return hasher.hexdigest()
+
 
 # =======================================
 # Audit Trail Decorator
 # =======================================
 
+
 def audit_changes(model_class):
     """
     Decorator to automatically log changes for SOC2 Compliance.
+    
+    Usage:
+        @audit_changes
+        class MyModel(Base, ComplianceMixin):
+            ...
     """
+
+    @event.listens_for(model_class, "before_update")
+    def receive_before_update(mapper, connection, target):
+        insp = inspect(target)
+        changes = {}
+        for column in mapper.columns:
+            hist = insp.attrs[column.name].history
+            if not hist.has_changes():
+                continue
+
+            committed_value = hist.deleted[0] if hist.deleted else None
+            current_value = hist.added[0] if hist.added else getattr(target, column.name)
+            
+            if current_value != committed_value:
+                # Mask sensitive data in audit log
+                if hasattr(column, "info") and column.info.get("mask_in_logs"):
+                    if "@" in str(committed_value or ""):
+                        old_value = mask_email(str(committed_value))
+                        new_value = mask_email(str(current_value))
+                    elif "phone" in column.name.lower():
+                        old_value = mask_phone(str(committed_value or ""))
+                        new_value = mask_phone(str(current_value or ""))
+                    else:
+                        old_value = mask_sensitive_data(str(committed_value or ""))
+                        new_value = mask_sensitive_data(str(current_value or ""))
+                else:
+                    old_value = committed_value
+                    new_value = current_value
+                
+                changes[column.name] = {"old": old_value, "new": new_value,
+                                        "timestamp": datetime.now(timezone.utc)
+                            }
+            
+        # store audit log to the audit table
+        if changes:
+            audit_entry = {
+                "entity_type": model_class.__name__,
+                "entity_id": getattr(target, "id", None),
+                "action": "UPDATE",
+                "changes": changes,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            # TODO: Implement saving the audit log entry to the db
+
+    return model_class
+
+# =======================================
+# Compliance Validation
+# =======================================
+
+def validate_compliance(model_class) -> Dict[str, List[str]]:
+    """
+    Validates that the model class complies with GDPR and SOC2 requirements.
+
+    Args:
+        model_class: The SQLAlchemy model class to validate
+    Returns:
+        Dict[str, List[str]]: A dictionary with lists of compliance issues found
+    """
+    """
+    Validate a model's compliance configuration.
+
+    Returns:
+        Dictionary of compliance issues by category
+    """
+    issues = {"gdpr": [], "soc2": [], "encryption": []}
+
+    # Check for PII without GDPR markers
+    for column in model_class.__table__.columns:
+        if hasattr(column, "info"):
+            info = column.info
+
+            # PII should have GDPR markers
+            if info.get("pii") and not info.get("gdpr_relevant"):
+                issues["gdpr"].append(f"{column.name}: PII field missing GDPR marker")
+
+            # Restricted data should be encrypted
+            if info.get("sensitivity") == DataSensitivity.RESTRICTED.value:
+                if info.get("encryption") == EncryptionType.NONE.value:
+                    issues["encryption"].append(
+                        f"{column.name}: Restricted data not encrypted"
+                    )
+
+            # GDPR data should have retention period
+            if info.get("gdpr_relevant") and not info.get("retention_period"):
+                issues["gdpr"].append(
+                    f"{column.name}: GDPR data missing retention period"
+                )
+
+    return issues
