@@ -13,8 +13,11 @@ from enum import Enum as PyEnum
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, TypeVar
 import hashlib
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from os import getenv
-from cryptography.fernet import Fernet, InvalidToken
+from secrets import token_bytes
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # =======================================
 # Constants used across this module
@@ -578,68 +581,103 @@ class CryptoUtils:
     Utility class for data encryption and decryption, hashing, and key management.
     """
 
+    _NONCE_LENGTH = 12  # AES-GCM recommended nonce size
+
     @staticmethod
-    def encrypt(value:str, key: bytes | None = None)-> str:
+    def _normalize_key(key: bytes | str | None) -> bytes:
         """
-        Encrypts a value using Fernet symmetric encryption.
+        Accept raw 32-byte keys or their URL-safe base64 encoding and return raw bytes.
+        """
+        if key is None:
+            raise ValueError("Encryption key must be provided")
+
+        if isinstance(key, bytes):
+            key_bytes_candidate = key
+        else:
+            key_bytes_candidate = key.encode("utf-8")
+
+        # Accept already-raw 32 byte keys
+        if len(key_bytes_candidate) == 32:
+            return key_bytes_candidate
+
+        # Accept URL-safe base64-encoded keys
+        try:
+            decoded = urlsafe_b64decode(key_bytes_candidate)
+        except Exception:
+            decoded = None
+
+        if decoded and len(decoded) == 32:
+            return decoded
+
+        raise ValueError(
+            "Encryption key must be 32 bytes (AES-256) or its URL-safe base64 encoding"
+        )
+
+    @staticmethod
+    def encrypt(value:str, key: bytes | str | None = None)-> str:
+        """
+        Encrypts a value using AES-256-GCM.
 
         Args:
             value: Plain text value to encrypt
-            key: Encryption key (32 bytes for Fernet)
+            key: 32-byte AES key (raw bytes or URL-safe base64 encoded)
             
         Returns:
-            Base64-encoded encrypted value
+            URL-safe base64 encoded ciphertext containing nonce + ciphertext + tag
         """
         if value is None:
             return None
-        if key is None:
-            raise ValueError("Encryption key must be provided")
-        try: 
-            cipher = Fernet(key)
-            encrypted = cipher.encrypt(value.encode('utf-8'))
-            return encrypted.decode('utf-8')
-        except InvalidToken as e:
+        key_bytes = CryptoUtils._normalize_key(key)
+        try:
+            aesgcm = AESGCM(key_bytes)
+            nonce = token_bytes(CryptoUtils._NONCE_LENGTH)
+            ciphertext = aesgcm.encrypt(nonce, value.encode("utf-8"), None)
+            token = urlsafe_b64encode(nonce + ciphertext)
+            return token.decode("utf-8")
+        except InvalidTag as e:
             raise ValueError("Invalid encryption key") from e
         except Exception as e:
-            raise ValueError(f"Encryption failed") from e
+            raise ValueError("Encryption failed") from e
 
     @staticmethod
-    def decrypt(token: str, key: bytes | None = None) -> str | None:
+    def decrypt(token: str, key: bytes | str | None = None) -> str | None:
         """
-        Decrypts a Fernet-encrypted value.
+        Decrypts an AES-256-GCM encrypted value.
 
         Args:
-            token: Base64-encoded encrypted string
-            key: Fernet key (URL-safe base64-encoded 32-byte key)
+            token: URL-safe base64 string containing nonce + ciphertext + tag
+            key: 32-byte AES key (raw bytes or URL-safe base64 encoded)
 
         Returns:
             Decrypted plaintext string or None
         """
         if token is None:
             return None
-
-        if key is None:
-            raise ValueError("Decryption key is required")
-
+        key_bytes = CryptoUtils._normalize_key(key)
         try:
-            cipher = Fernet(key)
-            decrypted = cipher.decrypt(token.encode("utf-8"))
+            raw = urlsafe_b64decode(token.encode("utf-8"))
+            if len(raw) <= CryptoUtils._NONCE_LENGTH:
+                raise ValueError("Invalid encrypted payload")
+            nonce = raw[: CryptoUtils._NONCE_LENGTH]
+            ciphertext = raw[CryptoUtils._NONCE_LENGTH :]
+            aesgcm = AESGCM(key_bytes)
+            decrypted = aesgcm.decrypt(nonce, ciphertext, None)
             return decrypted.decode("utf-8")
-        except InvalidToken as e:
-            # Wrong key, corrupted data, or tampering
+        except (InvalidTag, ValueError, TypeError) as e:
             raise ValueError("Invalid or corrupted encrypted value") from e
-        except (ValueError, TypeError) as e:
+        except Exception as e:
             raise ValueError("Decryption failed") from e
 
     @staticmethod
     def generate_key() -> bytes:
         """
-        Generates a new Fernet encryption key.
+        Generates a new AES-256-GCM key.
 
         Returns:
             bytes: The generated key.
         """
-        return Fernet.generate_key()
+        key = AESGCM.generate_key(bit_length=256)
+        return urlsafe_b64encode(key)
 
     @staticmethod
     def hash_value(value:str, algorithm:str = "sha256")-> str:
