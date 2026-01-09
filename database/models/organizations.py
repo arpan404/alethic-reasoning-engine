@@ -72,6 +72,9 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
+    workos_organization_id: Mapped[str | None] = mapped_column(
+        String(100), unique=True, nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     workspace: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     logo: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("files.id"))
