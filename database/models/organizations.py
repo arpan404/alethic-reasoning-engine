@@ -1,16 +1,27 @@
 from typing import Any, TypedDict
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Boolean, ForeignKey, BigInteger, DateTime, func, JSON, Enum as SQLEnum
+from sqlalchemy import (
+    String,
+    Boolean,
+    ForeignKey,
+    BigInteger,
+    DateTime,
+    func,
+    JSON,
+    Enum as SQLEnum,
+)
 from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
 from database.security import audit_changes
+
 
 # ==================== Enums ===================== #
 class OrganizationType(str, PyEnum):
     """
     Types of organizations.
     """
+
     NON_PROFIT = "non_profit"
     FOR_PROFIT = "for_profit"
     GOVERNMENT = "government"
@@ -33,6 +44,7 @@ class OrganizationRoles(str, PyEnum):
     """
     Roles within an organization.
     """
+
     OWNER = "owner"
     ADMIN = "admin"
     DIRECTOR = "director"
@@ -49,17 +61,19 @@ class OrganizationRoles(str, PyEnum):
     VIEWER = "viewer"
     CONTRACTOR = "contractor"
 
+
 @audit_changes
 class Organization(Base):
     """
     Organization model representing companies or groups using the platform.
     """
+
     __tablename__: str = "organizations"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    workspace: Mapped[str] = mapped_column(String(255), unique = True, nullable=False)
+    workspace: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     logo: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("files.id"))
     owner: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     subscription: Mapped[int | None] = mapped_column(
@@ -80,13 +94,15 @@ class Organization(Base):
     )
     updated_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
-    )  
+    )
+
 
 @audit_changes
 class OrganizationUserInvite(Base):
     """
     Invitations sent to users to join an organization.
     """
+
     __tablename__: str = "organization_user_invites"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -117,11 +133,13 @@ class OrganizationUserInvite(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
 
+
 @audit_changes
 class OrganizationUsers(Base):
     """
     Association table for users belonging to organizations.
     """
+
     __tablename__: str = "organization_users"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -151,12 +169,14 @@ class OrganizationUsers(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+
 # ================== Organization Settings Model ==================== #
 # TODO: Expand settings as needed
 class OrganizationSettingsKey(str, PyEnum):
     """
     Keys for organization settings.
     """
+
     NOTIFICATION_PREFERENCES = "notification_preferences"
     DATA_RETENTION_POLICY = "data_retention_policy"
     CUSTOM_BRANDING = "custom_branding"
@@ -164,20 +184,24 @@ class OrganizationSettingsKey(str, PyEnum):
     INTEGRATIONS = "integrations"
     USER_MANAGEMENT_POLICIES = "user_management_policies"
 
+
 class OrganizationAISettings(TypedDict):
     """
     AI-related settings for an organization.
     """
+
     enable_ai_features: bool
     ai_model_preference: str
     data_sharing_consent: bool
     custom_ai_prompts: dict[str, str]
+
 
 @audit_changes
 class OrganizationSettings(Base):
     """
     Organization specific configurations and settings.
     """
+
     __tablename__ = "organization_settings"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -188,9 +212,7 @@ class OrganizationSettings(Base):
     settings: Mapped[dict[OrganizationSettingsKey, Any]] = mapped_column(
         JSON, default={}
     )
-    ai_settings: Mapped[OrganizationAISettings | None] = mapped_column(
-        JSON, default={}
-    )
+    ai_settings: Mapped[OrganizationAISettings | None] = mapped_column(JSON, default={})
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -203,5 +225,4 @@ class OrganizationSettings(Base):
     )
     updated_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
-    ) 
-    
+    )
