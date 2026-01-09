@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    JSON,
     String,
     Boolean,
     ForeignKey,
@@ -194,6 +193,7 @@ class FileAccessControl(Base):
         onupdate=func.now(),
     )
 
+
 # ================== File Share Config Model ====================
 class FileShareConfig(Base):
     """
@@ -222,6 +222,7 @@ class FileShareConfig(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
 
 # ================== File Tag Model ====================
 class FileTag(Base):
@@ -255,4 +256,3 @@ class FileTag(Base):
     updated_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=True
     )
-
