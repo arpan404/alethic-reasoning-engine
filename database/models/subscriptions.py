@@ -237,6 +237,7 @@ class Invoices(Base):
     )
 
 
+@audit_changes
 class UsageTracking(Base):
     """
     Tracks usage of features against subscription limits.
