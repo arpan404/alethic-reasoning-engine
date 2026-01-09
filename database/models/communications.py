@@ -15,6 +15,7 @@ from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy.dialects.postgresql import ARRAY
+from database.security import audit_changes
 
 
 # ============ Message Enum & Types =============== #
@@ -63,6 +64,7 @@ class TemplateConfigType(TypedDict):
 
 
 # ============ Email Template Model =============== #
+@audit_changes
 class EmailTemplate(Base):
     """
     Reusable email templates.
@@ -108,6 +110,7 @@ class EmailTemplate(Base):
 
 
 # ============ Message Model =============== #
+@audit_changes
 class Message(Base):
     """
     Communication history between recruiters/users and candidates.
@@ -157,6 +160,7 @@ class Message(Base):
 
 
 # ============ Email Deliver Log =============== #
+@audit_changes
 class EmailDeliverLog(Base):
     """
     Logs for email delivery status and errors.
@@ -209,7 +213,7 @@ class NotificationType(str, PyEnum):
     INTERVIEW = "interview"
     OFFER = "offer"
 
-
+@audit_changes
 class Notification(Base):
     """System notifications for users."""
 
@@ -251,7 +255,7 @@ class Notification(Base):
         onupdate=func.now(),
     )
 
-
+@audit_changes
 class NotificationPreference(Base):
     """User notification settings."""
 
