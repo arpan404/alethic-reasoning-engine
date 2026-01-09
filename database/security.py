@@ -708,7 +708,7 @@ class CryptoUtils:
 def audit_changes(model_class):
     """
     Decorator to automatically log changes for SOC2 Compliance.
-    
+
     Usage:
         @audit_changes
         class MyModel(Base, ComplianceMixin):
@@ -725,8 +725,10 @@ def audit_changes(model_class):
                 continue
 
             committed_value = hist.deleted[0] if hist.deleted else None
-            current_value = hist.added[0] if hist.added else getattr(target, column.name)
-            
+            current_value = (
+                hist.added[0] if hist.added else getattr(target, column.name)
+            )
+
             if current_value != committed_value:
                 # Mask sensitive data in audit log
                 if hasattr(column, "info") and column.info.get("mask_in_logs"):
@@ -742,11 +744,13 @@ def audit_changes(model_class):
                 else:
                     old_value = committed_value
                     new_value = current_value
-                
-                changes[column.name] = {"old": old_value, "new": new_value,
-                                        "timestamp": datetime.now(timezone.utc)
-                            }
-            
+
+                changes[column.name] = {
+                    "old": old_value,
+                    "new": new_value,
+                    "timestamp": datetime.now(timezone.utc),
+                }
+
         # store audit log to the audit table
         if changes:
             audit_entry = {
@@ -754,15 +758,17 @@ def audit_changes(model_class):
                 "entity_id": getattr(target, "id", None),
                 "action": "UPDATE",
                 "changes": changes,
-                "timestamp": datetime.now(timezone.utc)
+                "timestamp": datetime.now(timezone.utc),
             }
             # TODO: Implement saving the audit log entry to the db
 
     return model_class
 
+
 # =======================================
 # Compliance Validation
 # =======================================
+
 
 def validate_compliance(model_class) -> Dict[str, List[str]]:
     """
