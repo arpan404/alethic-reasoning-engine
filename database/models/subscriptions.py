@@ -15,6 +15,7 @@ from enum import Enum as PyEnum
 from datetime import datetime
 from database.security import audit_changes
 
+
 # ==================== Enums ===================== #
 class SubscriptionTier(str, PyEnum):
     FREE = "free"
@@ -29,11 +30,13 @@ class SubscriptionStatus(str, PyEnum):
     CANCELED = "canceled"
     EXPIRED = "expired"
 
+
 class BillingStatus(str, PyEnum):
     PAID = "paid"
     PENDING = "pending"
     FAILED = "failed"
     REFUNDED = "refunded"
+
 
 # ==================== Subscription Model ===================== #
 @audit_changes
@@ -64,15 +67,21 @@ class Subscription(Base):
     limit_reset_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )  # when the limits reset like at month start or year start, customisable based on billing cycle or requirements
-    no_of_organizations: Mapped[int | None] = mapped_column(Integer)  # number of organizations allowed under this subscription
-    no_of_team_members: Mapped[int | None] = mapped_column(Integer)  # number of team members allowed under this subscription in each organization
+    no_of_organizations: Mapped[int | None] = mapped_column(
+        Integer
+    )  # number of organizations allowed under this subscription
+    no_of_team_members: Mapped[int | None] = mapped_column(
+        Integer
+    )  # number of team members allowed under this subscription in each organization
 
     # Billing
     billing_cycle: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     price_per_month: Mapped[float | None] = mapped_column(
         BigInteger
     )  # in cents to avoid float precision issues
-    currency: Mapped[str | None] = mapped_column(String(10), default="USD", nullable=False)  # USD, EUR, etc.
+    currency: Mapped[str | None] = mapped_column(
+        String(10), default="USD", nullable=False
+    )  # USD, EUR, etc.
 
     # Metadata
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -87,11 +96,13 @@ class Subscription(Base):
         onupdate=func.now(),
     )
 
+
 @audit_changes
 class SubscriptionFeature(Base):
     """
     Features associated with each subscription tier.
     """
+
     __tablename__: str = "subscription_features"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -124,13 +135,15 @@ class SubscriptionFeature(Base):
 
     updated_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=True
-    )  # FK to users table; the admin who last updated this feature entry   
+    )  # FK to users table; the admin who last updated this feature entry
+
 
 @audit_changes
 class BillingHistory(Base):
     """
     Billing and payment history for subscriptions.
     """
+
     __tablename__: str = "billing_history"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -154,17 +167,23 @@ class BillingHistory(Base):
     )
 
     # Payment Info
-    payment_method: Mapped[str | None] = mapped_column(String(100))  # e.g., credit card, PayPal
-    transaction_id: Mapped[str | None] = mapped_column(String(100))  # from payment gateway
+    payment_method: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # e.g., credit card, PayPal
+    transaction_id: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # from payment gateway
     payment_status: Mapped[BillingStatus] = mapped_column(
-        SQLEnum(BillingStatus, name="billing_status"), nullable=False, default=BillingStatus.PENDING
+        SQLEnum(BillingStatus, name="billing_status"),
+        nullable=False,
+        default=BillingStatus.PENDING,
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     invoice_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("invoices.id"), nullable=True
     )  # FK to invoices table
-    
+
     # created at
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -176,11 +195,13 @@ class BillingHistory(Base):
         onupdate=func.now(),
     )
 
+
 @audit_changes
 class Invoices(Base):
     """
     Invoices generated for subscriptions.
     """
+
     __tablename__: str = "invoices"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -188,7 +209,9 @@ class Invoices(Base):
     subscription_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("subscriptions.id"), nullable=False, index=True
     )
-    invoice_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    invoice_number: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True
+    )
     amount: Mapped[float] = mapped_column(BigInteger, nullable=False)  # in cents
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     issued_at: Mapped[datetime] = mapped_column(
@@ -218,6 +241,7 @@ class UsageTracking(Base):
     """
     Tracks usage of features against subscription limits.
     """
+
     __tablename__: str = "usage_tracking"
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
@@ -226,7 +250,10 @@ class UsageTracking(Base):
         BigInteger, ForeignKey("subscriptions.id"), nullable=False, index=True
     )
     organization_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizations.id"), nullable=False, index=True,
+        BigInteger,
+        ForeignKey("organizations.id"),
+        nullable=False,
+        index=True,
     )
 
     # usage metrics
