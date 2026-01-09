@@ -14,9 +14,10 @@ from sqlalchemy import (
 from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
+from sqlalchemy.dialects.postgresql import ARRAY
 
 
-# ================== Message Enum ====================
+# ============ Message Enum & Types =============== #
 class MessageStatus(str, PyEnum):
     """Message delivery status."""
 
@@ -27,7 +28,31 @@ class MessageStatus(str, PyEnum):
     FAILED = "failed"
 
 
-# ================== Template Config Type ====================
+class MessageSender(str, PyEnum):
+    """Message sender type."""
+
+    RECRUITER = "recruiter"
+    SYSTEM = "system"
+    CANDIDATE = "candidate"
+
+
+class MessageType(str, PyEnum):
+    """Message type."""
+
+    EMAIL = "email"
+    SMS = "sms"
+    IN_APP = "in_app"
+
+
+class MessageContent(TypedDict):
+    """Structure for message content."""
+
+    subject: str
+    body_text: str
+    body_html: str
+
+
+# ============ Template Config Type =============== #
 class TemplateConfigType(TypedDict):
     """Configuration for email templates."""
 
@@ -37,7 +62,7 @@ class TemplateConfigType(TypedDict):
     template_string: str  # The actual template string with placeholders
 
 
-# ================== Email Template Model ====================
+# ============ Email Template Model =============== #
 class EmailTemplate(Base):
     """
     Reusable email templates.
@@ -79,4 +104,191 @@ class EmailTemplate(Base):
     )
     updated_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+
+# ============ Message Model =============== #
+class Message(Base):
+    """
+    Communication history between recruiters/users and candidates.
+    """
+
+    __tablename__ = "messages"
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+
+    sender_type: Mapped[MessageSender] = mapped_column(
+        SQLEnum(MessageSender), nullable=False
+    )  # sender and receipient
+    # sender and receipient
+    sender_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    recipient_type: Mapped[MessageSender] = mapped_column(
+        SQLEnum(MessageSender), nullable=False
+    )
+    recipient_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+
+    # Message details
+    message_type: Mapped[MessageType] = mapped_column(
+        SQLEnum(MessageType), nullable=False
+    )
+
+    # Context
+    application_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("applications.id"), index=True
+    )
+    job_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("jobs.id"), index=True
+    )
+    message_content: Mapped[MessageContent] = mapped_column(JSON, nullable=False)
+
+    # Status
+    status: Mapped[MessageStatus] = mapped_column(
+        SQLEnum(MessageStatus), nullable=False, default=MessageStatus.PENDING
+    )
+
+    # timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ============ Email Deliver Log =============== #
+class EmailDeliverLog(Base):
+    """
+    Logs for email delivery status and errors.
+    """
+
+    __tablename__ = "email_delivery_logs"
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    message_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("messages.id"), nullable=False, index=True
+    )
+
+    # Delivery status
+    delivery_status: Mapped[MessageStatus] = mapped_column(
+        SQLEnum(MessageStatus), nullable=False
+    )
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    # Email details
+    to_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    from_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    cc_email: Mapped[list[str] | None] = mapped_column(ARRAY(String(255)))
+    bcc_email: Mapped[list[str] | None] = mapped_column(ARRAY(String(255)))
+
+    # Provider info
+    provider: Mapped[str | None] = mapped_column(String(50))  # sendgrid, ses, mailgun
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), index=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+# ============ Notification Model =============== #
+class NotificationType(str, PyEnum):
+    """Types of notifications."""
+
+    SYSTEM = "system"
+    APPLICATION = "application"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+
+
+class Notification(Base):
+    """System notifications for users."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    # Notification details
+    notification_type: Mapped[NotificationType] = mapped_column(
+        SQLEnum(NotificationType), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Context
+    entity_type: Mapped[str | None] = mapped_column(String(50))
+    entity_id: Mapped[int | None] = mapped_column(BigInteger)
+    action_url: Mapped[str | None] = mapped_column(String(500))
+
+    # status
+    is_read: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class NotificationPreference(Base):
+    """User notification settings."""
+
+    __tablename__ = "notification_preferences"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    # Preferences
+    email_notifications: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    sms_notifications: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    in_app_notifications: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    push_notifications: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+
+    # Norification types preferences (JSON)
+    notification_settings: Mapped[dict | None] = mapped_column(JSON)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )

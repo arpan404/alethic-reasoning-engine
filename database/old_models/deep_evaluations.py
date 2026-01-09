@@ -25,7 +25,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from database.engine import Base
-from database.security import (
+from database.gg import (
     ComplianceMixin,
     compliance_column,
     DataSensitivity,
