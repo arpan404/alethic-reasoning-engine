@@ -12,7 +12,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
     Index,
 )
-from sqlalchemy.dialects.postgresql import VECTOR
+from pgvector.sqlalchemy import Vector
 from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
@@ -77,6 +77,14 @@ class EmbeddingModel(Base):
         "Embedding", back_populates="model", cascade="all, delete-orphan"
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_embedding_model_provider", "model_provider"),
+        Index("idx_embedding_model_active", "is_active"),
+        # Unique constraint for model name + version
+        Index("idx_embedding_model_name_version", "model_name", "model_version", unique=True),
+    )
+
 
 # ==================== Embedding Table ===================== #
 class Embedding(Base):
@@ -99,7 +107,7 @@ class Embedding(Base):
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
     # Embedding vector (adjust dimension according to your model)
-    embedding_vector = mapped_column(VECTOR(1024), nullable=False)
+    embedding_vector = mapped_column(Vector(1024), nullable=False)
 
     # Embedding model info
     embedding_model_id: Mapped[int] = mapped_column(

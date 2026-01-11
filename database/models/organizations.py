@@ -1,4 +1,13 @@
-from typing import Any, TypedDict
+from typing import Any, TypedDict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.applications import Application
+    from database.models.talent_pools import TalentPool
+    from database.models.pipelines import HiringPipeline
+    from database.models.compliance import EEOCReport
+    from database.models.referrals import ReferralProgram
+    from database.models.background_checks import BackgroundCheckProvider
+    from database.models.integrations import OrganizationIntegration
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
@@ -9,6 +18,7 @@ from sqlalchemy import (
     func,
     JSON,
     Enum as SQLEnum,
+    Index,
 )
 from database.engine import Base
 from datetime import datetime
@@ -141,6 +151,45 @@ class Organization(Base):
         back_populates="organization",
         cascade="all, delete-orphan",
     )
+    applications: Mapped[list["Application"]] = relationship(
+        "Application", back_populates="organization", cascade="all, delete-orphan"
+    )
+    offers: Mapped[list["Offer"]] = relationship(
+        "Offer", back_populates="organization", cascade="all, delete-orphan"
+    )
+    talent_pools: Mapped[list["TalentPool"]] = relationship(
+        "TalentPool", back_populates="organization", cascade="all, delete-orphan"
+    )
+    pipelines: Mapped[list["HiringPipeline"]] = relationship(
+        "HiringPipeline", back_populates="organization", cascade="all, delete-orphan"
+    )
+    eoc_reports: Mapped[list["EEOCReport"]] = relationship(
+        "EEOCReport", back_populates="organization", cascade="all, delete-orphan"
+    )
+    referral_program: Mapped["ReferralProgram | None"] = relationship(
+        "ReferralProgram",
+        back_populates="organization",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    background_check_providers: Mapped[list["BackgroundCheckProvider"]] = relationship(
+        "BackgroundCheckProvider",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+    integrations: Mapped[list["OrganizationIntegration"]] = relationship(
+        "OrganizationIntegration",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_organization_workspace", "workspace"),
+        Index("idx_organization_workos", "workos_organization_id"),
+        Index("idx_organization_owner", "owner"),
+        Index("idx_organization_created_at", "created_at"),
+    )
 
 
 @audit_changes
@@ -188,6 +237,14 @@ class OrganizationUserInvite(Base):
     # Relationships
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="invites"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_org_invite_organization", "organization_id"),
+        Index("idx_org_invite_email", "email"),
+        Index("idx_org_invite_token", "token"),
+        Index("idx_org_invite_expires", "expires_at"),
     )
 
 
@@ -239,6 +296,14 @@ class OrganizationUsers(Base):
         "Organization", back_populates="members"
     )
     user: Mapped["User"] = relationship("User", back_populates="organization_memberships", foreign_keys=[user_id])
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_org_users_organization", "organization_id"),
+        Index("idx_org_users_user", "user_id"),
+        Index("idx_org_users_role", "role"),
+        Index("idx_org_users_org_role", "organization_id", "role"),
+    )
 
 
 # Forward reference for User type
@@ -309,4 +374,20 @@ class OrganizationSettings(Base):
     # Relationships
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="settings"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_org_settings_org", "organization_id"),
+        # GIN indexes for JSON settings (PostgreSQL)
+        Index(
+            "idx_org_settings_json_gin",
+            "settings",
+            postgresql_using="gin"
+        ),
+        Index(
+            "idx_org_settings_ai_json_gin",
+            "ai_settings",
+            postgresql_using="gin"
+        ),
     )

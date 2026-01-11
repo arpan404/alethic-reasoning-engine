@@ -22,7 +22,12 @@ from database.engine import Base
 from database.security import audit_changes
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.candidates import Candidate
+    from database.models.jobs import Job
+    from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -134,6 +139,20 @@ class ReferralProgram(Base):
     referrals: Mapped[list["Referral"]] = relationship(
         "Referral", back_populates="program", cascade="all, delete-orphan"
     )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="referral_program"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_referral_program_active", "is_active"),
+        # GIN indexes for JSON arrays
+        Index(
+            "idx_referral_program_tiers_gin",
+            "bonus_tiers",
+            postgresql_using="gin"
+        ),
+    )
 
 
 # ==================== Referral Model ===================== #
@@ -243,16 +262,33 @@ class Referral(Base):
     program: Mapped["ReferralProgram"] = relationship(
         "ReferralProgram", back_populates="referrals"
     )
+    candidate: Mapped["Candidate | None"] = relationship(
+        "Candidate", back_populates="referrals_received"
+    )
+    job: Mapped["Job | None"] = relationship(
+        "Job", back_populates="referrals"
+    )
     bonuses: Mapped[list["ReferralBonus"]] = relationship(
         "ReferralBonus", back_populates="referral", cascade="all, delete-orphan"
     )
 
-    # Unique constraint
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint(
             "organization_id", "candidate_email", "job_id", name="uq_referral_candidate_job"
         ),
         Index("idx_referral_status", "organization_id", "status"),
+        Index("idx_referral_job", "job_id"),
+        Index("idx_referral_hired", "hired_at"),
+        Index("idx_referral_bonus_eligible", "bonus_eligible"),
+        Index("idx_referral_tier", "bonus_tier"),
+        # Partial index for pending referrals
+        Index(
+            "idx_referral_pending",
+            "organization_id",
+            "submitted_at",
+            postgresql_where="status IN ('submitted', 'reviewing')"
+        ),
     )
 
 
@@ -333,4 +369,18 @@ class ReferralBonus(Base):
     # Relationships
     referral: Mapped["Referral"] = relationship(
         "Referral", back_populates="bonuses"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_referral_bonus_status", "status"),
+        Index("idx_referral_bonus_eligible", "eligible_date"),
+        Index("idx_referral_bonus_paid", "paid_at"),
+        # Partial index for pending bonuses
+        Index(
+            "idx_referral_bonus_pending",
+            "referral_id",
+            "eligible_date",
+            postgresql_where="status IN ('pending', 'eligible', 'processing')"
+        ),
     )

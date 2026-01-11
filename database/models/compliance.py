@@ -28,7 +28,11 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.candidates import Candidate
+    from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -102,6 +106,11 @@ class DiversityData(Base, ComplianceMixin):
         nullable=False,
         unique=True,
         index=True,
+    )
+
+    # Relationship
+    candidate: Mapped["Candidate"] = relationship(
+        "Candidate", back_populates="diversity_data"
     )
 
     # Gender
@@ -253,6 +262,11 @@ class EEOCReport(Base):
     )
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="eoc_reports"
     )
 
     # Indexes

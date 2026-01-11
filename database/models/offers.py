@@ -29,7 +29,13 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.applications import Application
+    from database.models.candidates import Candidate
+    from database.models.jobs import Job
+    from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -145,6 +151,30 @@ class Offer(Base, ComplianceMixin):
     annual_bonus_target: Mapped[float | None] = mapped_column(Float)  # Percentage
     equity_shares: Mapped[int | None] = mapped_column(BigInteger)
     equity_type: Mapped[str | None] = mapped_column(String(50))  # options, RSUs
+
+    # Relationships
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="offers"
+    )
+    candidate: Mapped["Candidate"] = relationship(
+        "Candidate", back_populates="offers"
+    )
+    job: Mapped["Job"] = relationship(
+        "Job", back_populates="offers"
+    )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="offers"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_offer_application", "application_id"),
+        Index("idx_offer_job", "job_id"),
+        Index("idx_offer_candidate", "candidate_id"),
+        Index("idx_offer_organization", "organization_id"),
+        Index("idx_offer_status", "status"),
+        Index("idx_offer_org_status", "organization_id", "status"),
+    )
     equity_vesting_schedule: Mapped[str | None] = mapped_column(String(100))
 
     # Benefits
@@ -202,6 +232,18 @@ class Offer(Base, ComplianceMixin):
     )
 
     # Relationships
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="offers"
+    )
+    candidate: Mapped["Candidate"] = relationship(
+        "Candidate", back_populates="offers"
+    )
+    job: Mapped["Job"] = relationship(
+        "Job", back_populates="offers"
+    )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="offers"
+    )
     approvals: Mapped[list["OfferApproval"]] = relationship(
         "OfferApproval", back_populates="offer", cascade="all, delete-orphan"
     )
@@ -211,6 +253,11 @@ class Offer(Base, ComplianceMixin):
 
     # Indexes
     __table_args__ = (
+        Index("idx_offer_application", "application_id"),
+        Index("idx_offer_job", "job_id"),
+        Index("idx_offer_candidate", "candidate_id"),
+        Index("idx_offer_organization", "organization_id"),
+        Index("idx_offer_status", "status"),
         Index("idx_offer_app_status", "application_id", "status"),
         Index("idx_offer_org", "organization_id", "status"),
     )
@@ -268,9 +315,20 @@ class OfferApproval(Base):
     # Relationships
     offer: Mapped["Offer"] = relationship("Offer", back_populates="approvals")
 
-    # Unique constraint
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint("offer_id", "approver_id", name="uq_offer_approver"),
+        Index("idx_offer_approval_offer", "offer_id"),
+        Index("idx_offer_approval_approver", "approver_id"),
+        Index("idx_offer_approval_status", "status"),
+        Index("idx_offer_approval_order", "offer_id", "approval_order"),
+        # Partial index for pending approvals
+        Index(
+            "idx_offer_approval_pending",
+            "approver_id",
+            "requested_at",
+            postgresql_where="status = 'pending'"
+        ),
     )
 
 
@@ -333,3 +391,11 @@ class OfferNegotiation(Base, ComplianceMixin):
 
     # Relationships
     offer: Mapped["Offer"] = relationship("Offer", back_populates="negotiations")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_offer_negotiation_offer", "offer_id"),
+        Index("idx_offer_negotiation_status", "status"),
+        Index("idx_offer_negotiation_round", "offer_id", "round_number"),
+        Index("idx_offer_negotiation_created", "created_at"),
+    )

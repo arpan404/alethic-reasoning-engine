@@ -28,7 +28,11 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+     from database.models.applications import Application
+     from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -171,15 +175,20 @@ class BackgroundCheckProvider(Base, ComplianceMixin):
     )
 
     # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="background_check_providers"
+    )
     checks: Mapped[list["BackgroundCheck"]] = relationship(
         "BackgroundCheck", back_populates="provider", cascade="all, delete-orphan"
     )
 
-    # Unique constraint
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint(
             "organization_id", "provider_type", name="uq_org_bg_provider"
         ),
+        Index("idx_bg_provider_type", "provider_type"),
+        Index("idx_bg_provider_active", "is_active"),
     )
 
 
@@ -294,6 +303,34 @@ class BackgroundCheck(Base, ComplianceMixin):
     # Relationships
     provider: Mapped["BackgroundCheckProvider | None"] = relationship(
         "BackgroundCheckProvider", back_populates="checks"
+    )
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="background_checks"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_bg_check_external", "external_check_id"),
+        Index("idx_bg_check_result", "result"),
+        Index("idx_bg_check_consent", "consent_given"),
+        Index("idx_bg_check_initiated", "initiated_at"),
+        Index("idx_bg_check_completed", "completed_at"),
+        Index("idx_bg_check_adverse", "adverse_action_initiated"),
+        # Composite index for application checks
+        Index("idx_bg_check_app_status", "application_id", "status"),
+        # GIN index for check results JSON
+        Index(
+            "idx_bg_check_results_gin",
+            "check_results",
+            postgresql_using="gin"
+        ),
+        # Partial index for pending checks
+        Index(
+            "idx_bg_check_pending",
+            "application_id",
+            "initiated_at",
+            postgresql_where="status IN ('pending', 'initiated', 'in_progress')"
+        ),
     )
 
     # Indexes

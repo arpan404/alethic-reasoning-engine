@@ -22,7 +22,12 @@ from database.engine import Base
 from database.security import audit_changes
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.applications import Application
+    from database.models.jobs import Job
+    from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -123,8 +128,27 @@ class HiringPipeline(Base):
     )
 
     # Relationships
+    job: Mapped["Job | None"] = relationship("Job", back_populates="pipeline")
     stages: Mapped[list["PipelineStage"]] = relationship(
         "PipelineStage", back_populates="pipeline", cascade="all, delete-orphan"
+    )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="pipelines"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_pipeline_org", "organization_id"),
+        Index("idx_pipeline_job", "job_id"),
+        Index("idx_pipeline_active", "is_active"),
+        Index("idx_pipeline_default", "organization_id", "is_default"),
+        # Partial index for active pipelines
+        Index(
+            "idx_pipeline_active_org",
+            "organization_id",
+            "created_at",
+            postgresql_where="is_active = true"
+        ),
     )
 
 
@@ -202,10 +226,18 @@ class PipelineStage(Base):
         "HiringPipeline", back_populates="stages"
     )
 
-    # Unique constraint
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint("pipeline_id", "stage_order", name="uq_pipeline_stage_order"),
         Index("idx_stage_pipeline", "pipeline_id", "stage_order"),
+        Index("idx_stage_type", "stage_type"),
+        Index("idx_stage_terminal", "is_terminal"),
+        # GIN indexes for JSON arrays (PostgreSQL)
+        Index(
+            "idx_stage_auto_actions_gin",
+            "auto_actions",
+            postgresql_using="gin"
+        ),
     )
 
 
@@ -273,6 +305,23 @@ class ApplicationStageHistory(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="stage_history"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_stage_history_application", "application_id"),
+        Index("idx_stage_history_stage", "stage_id"),
+        Index("idx_stage_history_pipeline", "pipeline_id"),
+        Index("idx_stage_history_entered", "entered_at"),
+        Index("idx_stage_history_exited", "exited_at"),
+        # Composite index for timeline queries
+        Index("idx_stage_history_app_timeline", "application_id", "entered_at"),
+        Index("idx_stage_history_trigger", "transition_trigger"),
     )
 
     # Indexes

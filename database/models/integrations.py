@@ -28,7 +28,11 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.jobs import Job
+    from database.models.organizations import Organization
 
 
 # ==================== Integration Enums ===================== #
@@ -356,7 +360,7 @@ class OrganizationIntegration(Base, ComplianceMixin):
     # Integration configuration
     config: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Platform-specific settings
     scopes: Mapped[list[str] | None] = mapped_column(JSON)  # OAuth scopes granted
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Additional metadata
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)  # Additional metadata
 
     # Error tracking
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -387,6 +391,9 @@ class OrganizationIntegration(Base, ComplianceMixin):
     )
 
     # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="integrations"
+    )
     webhooks: Mapped[list["IntegrationWebhook"]] = relationship(
         "IntegrationWebhook",
         back_populates="integration",
@@ -1348,6 +1355,7 @@ class JobBoardPosting(Base):
     posted_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
 
     # Relationships
+    job: Mapped["Job"] = relationship("Job", back_populates="job_board_postings")
     provider: Mapped["JobBoardProvider"] = relationship(
         "JobBoardProvider", back_populates="postings"
     )

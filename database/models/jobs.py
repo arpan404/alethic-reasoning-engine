@@ -30,6 +30,13 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from database.models.applications import Application
     from database.models.organizations import Organization
+    from database.models.offers import Offer
+    from database.models.ai_evaluations import Interview, AIEvaluation
+    from database.models.screening import ScreeningQuestion
+    from database.models.pipelines import HiringPipeline
+    from database.models.integrations import JobBoardPosting
+    from database.models.talent_pools import TalentPoolCampaign
+    from database.models.referrals import Referral
 
 
 # ==================== Job Enums ===================== #
@@ -382,7 +389,7 @@ class Job(Base):
     meta_title: Mapped[str | None] = mapped_column(String(255))
     meta_description: Mapped[str | None] = mapped_column(String(500))
     keywords: Mapped[list[str] | None] = mapped_column(JSON)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -430,10 +437,71 @@ class Job(Base):
         "Application", back_populates="job", cascade="all, delete-orphan"
     )
 
+    # Cross-module relationships
+    offers: Mapped[list["Offer"]] = relationship(
+        "Offer", back_populates="job", cascade="all, delete-orphan"
+    )
+    interviews: Mapped[list["Interview"]] = relationship(
+        "Interview", back_populates="job", cascade="all, delete-orphan"
+    )
+    ai_evaluations: Mapped[list["AIEvaluation"]] = relationship(
+        "AIEvaluation", back_populates="job", cascade="all, delete-orphan"
+    )
+    screening_questions: Mapped[list["ScreeningQuestion"]] = relationship(
+        "ScreeningQuestion", back_populates="job", cascade="all, delete-orphan"
+    )
+    pipeline: Mapped["HiringPipeline | None"] = relationship(
+        "HiringPipeline", back_populates="job", uselist=False
+    )
+    job_board_postings: Mapped[list["JobBoardPosting"]] = relationship(
+        "JobBoardPosting", back_populates="job", cascade="all, delete-orphan"
+    )
+    talent_pool_campaigns: Mapped[list["TalentPoolCampaign"]] = relationship(
+        "TalentPoolCampaign", back_populates="job"
+    )
+    referrals: Mapped[list["Referral"]] = relationship(
+        "Referral", back_populates="job"
+    )
+
     # Indexes
     __table_args__ = (
         Index("idx_job_org_status", "organization_id", "status"),
         Index("idx_job_search", "organization_id", "title", "status"),
+        Index("idx_job_slug", "slug"),
+        Index("idx_job_department", "department_id"),
+        Index("idx_job_hiring_manager", "hiring_manager_id"),
+        Index("idx_job_created_at", "created_at"),
+        Index("idx_job_posted_at", "posted_at"),
+        Index("idx_job_status", "status"),
+        Index("idx_job_org_created", "organization_id", "created_at"),
+        Index("idx_job_org_posted", "organization_id", "posted_at"),
+        # Partial indexes for common queries
+        Index(
+            "idx_job_open",
+            "organization_id",
+            "posted_at",
+            postgresql_where="status = 'open'"
+        ),
+        Index(
+            "idx_job_public_open",
+            "organization_id",
+            "posted_at",
+            postgresql_where="status = 'open' AND visibility = 'public'"
+        ),
+        # Index for counter-based sorting
+        Index("idx_job_applications_count", "applications_count"),
+        Index("idx_job_views_count", "views_count"),
+        # GIN index for JSON columns (PostgreSQL)
+        Index(
+            "idx_job_keywords_gin",
+            "keywords",
+            postgresql_using="gin"
+        ),
+        Index(
+            "idx_job_metadata_gin",
+            "metadata",
+            postgresql_using="gin"
+        ),
     )
 
 
@@ -512,9 +580,23 @@ class JobSource(Base):
     # Relationships
     job: Mapped["Job"] = relationship("Job", back_populates="sources")
 
-    # Unique constraint: one source type per job
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint("job_id", "source_type", name="uq_job_source_type"),
+        Index("idx_job_source_job", "job_id"),
+        Index("idx_job_source_type", "source_type"),
+        Index("idx_job_source_status", "status"),
+        Index("idx_job_source_external_id", "external_id"),
+        # Indexes for counter-based queries
+        Index("idx_job_source_applications_count", "applications_count"),
+        Index("idx_job_source_views_count", "views_count"),
+        # Partial index for active sources
+        Index(
+            "idx_job_source_active",
+            "job_id",
+            "source_type",
+            postgresql_where="status = 'active'"
+        ),
     )
 
 

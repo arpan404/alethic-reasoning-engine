@@ -154,6 +154,22 @@ class CalendarCredential(Base, ComplianceMixin):
     events: Mapped[list["CalendarEvent"]] = relationship(
         "CalendarEvent", back_populates="credential", cascade="all, delete-orphan"
     )
+
+    # Indexes
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_calendar_user_provider"),
+        Index("idx_calendar_cred_provider", "provider"),
+        Index("idx_calendar_cred_active", "is_active"),
+        Index("idx_calendar_cred_sync", "sync_enabled"),
+        Index("idx_calendar_cred_expires", "token_expires_at"),
+        # Partial index for active credentials needing sync
+        Index(
+            "idx_calendar_cred_active_sync",
+            "user_id",
+            "last_sync_at",
+            postgresql_where="is_active = true AND sync_enabled = true"
+        ),
+    )
     availability_blocks: Mapped[list["CalendarAvailability"]] = relationship(
         "CalendarAvailability", back_populates="credential", cascade="all, delete-orphan"
     )

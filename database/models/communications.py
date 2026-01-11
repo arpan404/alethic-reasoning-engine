@@ -134,6 +134,20 @@ class EmailTemplate(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_email_template_type", "template_type"),
+        Index("idx_email_template_active", "is_active"),
+        Index("idx_email_template_org_type", "organization_id", "template_type"),
+        # Partial index for active templates
+        Index(
+            "idx_email_template_active_org",
+            "organization_id",
+            "template_type",
+            postgresql_where="is_active = true"
+        ),
+    )
+
 
 # ============ Message Model =============== #
 @audit_changes
@@ -190,6 +204,23 @@ class Message(Base):
         "EmailDeliverLog", back_populates="message", cascade="all, delete-orphan"
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_message_sender", "sender_type", "sender_id"),
+        Index("idx_message_recipient", "recipient_type", "recipient_id"),
+        Index("idx_message_type", "message_type"),
+        Index("idx_message_status", "status"),
+        Index("idx_message_created", "created_at"),
+        Index("idx_message_application", "application_id", "created_at"),
+        # Partial index for pending messages
+        Index(
+            "idx_message_pending",
+            "message_type",
+            "created_at",
+            postgresql_where="status = 'pending'"
+        ),
+    )
+
 
 # ============ Email Deliver Log =============== #
 @audit_changes
@@ -242,6 +273,15 @@ class EmailDeliverLog(Base):
 
     # Relationships
     message: Mapped["Message"] = relationship("Message", back_populates="delivery_logs")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_email_log_status", "delivery_status"),
+        Index("idx_email_log_provider", "provider", "provider_message_id"),
+        Index("idx_email_log_created", "created_at"),
+        # Composite index for error tracking
+        Index("idx_email_log_errors", "delivery_status", "error_code"),
+    )
 
 
 # ============ Notification Model =============== #
@@ -297,6 +337,22 @@ class Notification(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_notification_type", "notification_type"),
+        Index("idx_notification_entity", "entity_type", "entity_id"),
+        Index("idx_notification_created", "created_at"),
+        # Composite index for user's unread notifications
+        Index("idx_notification_user_unread", "user_id", "is_read", "created_at"),
+        # Partial index for unread notifications
+        Index(
+            "idx_notification_unread",
+            "user_id",
+            "created_at",
+            postgresql_where="is_read = false"
+        ),
     )
 
 

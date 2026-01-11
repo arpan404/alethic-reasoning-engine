@@ -85,7 +85,7 @@ class AuditLog(Base):
     # Details
     description: Mapped[str | None] = mapped_column(Text)
     changes: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Before/after values
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)
 
     # Request context
     ip_address: Mapped[str | None] = mapped_column(String(45))

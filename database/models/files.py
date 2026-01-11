@@ -190,6 +190,25 @@ class File(Base):
         "FileTag", back_populates="file", cascade="all, delete-orphan"
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_file_processing", "processing_status"),
+        Index("idx_file_compression", "compression_status"),
+        Index("idx_file_deleted", "is_deleted", "deleted_at"),
+        Index("idx_file_created", "created_at"),
+        # Composite index for file queries
+        Index("idx_file_org_type", "organization_id", "file_type"),
+        Index("idx_file_uploader", "uploaded_by", "created_at"),
+        # Partial index for active files
+        Index(
+            "idx_file_active",
+            "organization_id",
+            "file_type",
+            "created_at",
+            postgresql_where="is_deleted = false"
+        ),
+    )
+
 
 # ================== File Access Control Model ====================
 class FileAccessControl(Base):

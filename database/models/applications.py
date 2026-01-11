@@ -35,6 +35,12 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from database.models.candidates import Candidate
     from database.models.jobs import Job
+    from database.models.offers import Offer
+    from database.models.ai_evaluations import Interview, AIEvaluation
+    from database.models.background_checks import BackgroundCheck
+    from database.models.screening import ScreeningAnswer
+    from database.models.pipelines import ApplicationStageHistory
+    from database.models.referrals import Referral
 
 
 # ==================== Application Enums ===================== #
@@ -228,10 +234,17 @@ class Application(Base, ComplianceMixin):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
 
-    # References
-    candidate_id: Mapped[int] = mapped_column(
+    # References - candidate_id is nullable to allow creating application first
+    # then attaching/creating candidate based on email
+    candidate_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("candidates.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # Store email for candidate lookup/creation
+    candidate_email: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
         index=True,
     )
@@ -324,15 +337,6 @@ class Application(Base, ComplianceMixin):
     current_interview_stage: Mapped[int | None] = mapped_column(BigInteger)
     total_interview_stages: Mapped[int | None] = mapped_column(BigInteger)
 
-    # Offer details
-    offer_amount: Mapped[int | None] = mapped_column(BigInteger)  # In cents
-    offer_currency: Mapped[str | None] = mapped_column(String(10))
-    offer_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    offer_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    offer_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    offer_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    offer_declined_reason: Mapped[str | None] = mapped_column(Text)
-
     # Rejection details
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[str | None] = mapped_column(Text)
@@ -373,8 +377,11 @@ class Application(Base, ComplianceMixin):
     )
 
     # Relationships
-    candidate: Mapped["Candidate"] = relationship(
+    candidate: Mapped["Candidate | None"] = relationship(
         "Candidate", back_populates="applications"
+    )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="applications"
     )
     job: Mapped["Job"] = relationship(
         "Job", back_populates="applications"
@@ -392,11 +399,67 @@ class Application(Base, ComplianceMixin):
         "ApplicationEvaluation", back_populates="application", cascade="all, delete-orphan"
     )
 
-    # Unique constraint: one application per candidate per job
+    # Cross-module relationships
+    offers: Mapped[list["Offer"]] = relationship(
+        "Offer", back_populates="application", cascade="all, delete-orphan"
+    )
+    interviews: Mapped[list["Interview"]] = relationship(
+        "Interview", back_populates="application", cascade="all, delete-orphan"
+    )
+    ai_evaluations: Mapped[list["AIEvaluation"]] = relationship(
+        "AIEvaluation", back_populates="application", cascade="all, delete-orphan"
+    )
+    background_checks: Mapped[list["BackgroundCheck"]] = relationship(
+        "BackgroundCheck", back_populates="application", cascade="all, delete-orphan"
+    )
+    screening_answers: Mapped[list["ScreeningAnswer"]] = relationship(
+        "ScreeningAnswer", back_populates="application", cascade="all, delete-orphan"
+    )
+    stage_history: Mapped[list["ApplicationStageHistory"]] = relationship(
+        "ApplicationStageHistory", back_populates="application", cascade="all, delete-orphan"
+    )
+
+    # Indexes and constraints
     __table_args__ = (
-        UniqueConstraint("candidate_id", "job_id", name="uq_candidate_job_application"),
+        # Unique constraint: one application per candidate email per job
+        UniqueConstraint("candidate_email", "job_id", name="uq_candidate_email_job_application"),
+        # Performance indexes
         Index("idx_application_org_status", "organization_id", "status"),
         Index("idx_application_source", "organization_id", "source"),
+        Index("idx_application_candidate", "candidate_id"),
+        Index("idx_application_job", "job_id"),
+        Index("idx_application_email", "candidate_email"),
+        Index("idx_application_status", "status"),
+        Index("idx_application_ai_status", "ai_status"),
+        Index("idx_application_created_at", "created_at"),
+        Index("idx_application_applied_at", "applied_at"),
+        Index("idx_application_assigned_to", "assigned_to"),
+        Index("idx_application_org_created", "organization_id", "created_at"),
+        Index("idx_application_job_status", "job_id", "status"),
+        # Partial indexes for common queries (PostgreSQL)
+        Index(
+            "idx_application_pending",
+            "organization_id",
+            "created_at",
+            postgresql_where="status = 'applied'"
+        ),
+        Index(
+            "idx_application_screening",
+            "organization_id",
+            "ai_screening_score",
+            postgresql_where="ai_screening_status = 'completed'"
+        ),
+        # GIN index for JSON columns (PostgreSQL)
+        Index(
+            "idx_application_data_gin",
+            "application_data",
+            postgresql_using="gin"
+        ),
+        Index(
+            "idx_application_ai_breakdown_gin",
+            "ai_score_breakdown",
+            postgresql_using="gin"
+        ),
     )
 
 
@@ -467,6 +530,14 @@ class ApplicationNote(Base):
         "Application", back_populates="notes"
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_application_note_application", "application_id"),
+        Index("idx_application_note_created_by", "created_by"),
+        Index("idx_application_note_visibility", "visibility"),
+        Index("idx_application_note_pinned", "is_pinned"),
+    )
+
 
 # ==================== Application Tag Model ===================== #
 @audit_changes
@@ -513,9 +584,12 @@ class ApplicationTag(Base):
         "Application", back_populates="tags"
     )
 
-    # Unique constraint: one tag per application
+    # Indexes and constraints
     __table_args__ = (
         UniqueConstraint("application_id", "tag", name="uq_application_tag"),
+        Index("idx_application_tag_application", "application_id"),
+        Index("idx_application_tag_tag", "tag"),
+        Index("idx_application_tag_created_by", "created_by"),
     )
 
 
@@ -572,9 +646,13 @@ class ApplicationActivity(Base):
         "Application", back_populates="activities"
     )
 
-    # Index for timeline queries
+    # Indexes for timeline and filtering queries
     __table_args__ = (
+        Index("idx_application_activity_application", "application_id"),
+        Index("idx_application_activity_type", "activity_type"),
+        Index("idx_application_activity_created", "created_at"),
         Index("idx_application_activity_timeline", "application_id", "created_at"),
+        Index("idx_application_activity_created_by", "created_by"),
     )
 
 
@@ -689,6 +767,12 @@ class ApplicationEvaluation(Base):
     __table_args__ = (
         # One evaluation per phase per application (can be re-run by deleting old)
         UniqueConstraint("application_id", "phase", name="uq_application_evaluation_phase"),
-        Index("idx_evaluation_status", "application_id", "status"),
+        Index("idx_evaluation_application", "application_id"),
+        Index("idx_evaluation_phase", "phase"),
+        Index("idx_evaluation_status", "status"),
+        Index("idx_evaluation_app_status", "application_id", "status"),
+        Index("idx_evaluation_app_phase", "application_id", "phase"),
+        Index("idx_evaluation_requires_review", "requires_manual_review"),
+    )
         Index("idx_evaluation_phase_status", "phase", "status"),
     )

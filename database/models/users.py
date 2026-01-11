@@ -9,6 +9,7 @@ from sqlalchemy import (
     Text,
     JSON,
     Enum as SQLEnum,
+    Index,
 )
 from database.engine import Base
 from database.models.organizations import OrganizationUsers
@@ -61,7 +62,7 @@ class User(Base, ComplianceMixin):
             gdpr_category=GDPRDataCategory.IDENTITY,
             soc2_critical=True,
             requires_consent=False,  # Email is required for account
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -74,7 +75,7 @@ class User(Base, ComplianceMixin):
             sensitivity=DataSensitivity.INTERNAL,
             pii=False,
             gdpr_relevant=True,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -88,7 +89,7 @@ class User(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.IDENTITY,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -100,7 +101,7 @@ class User(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.IDENTITY,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -114,7 +115,7 @@ class User(Base, ComplianceMixin):
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.CONTACT,
             requires_consent=True,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -167,9 +168,16 @@ class User(Base, ComplianceMixin):
     organization_memberships: Mapped[list["OrganizationUsers"]] = relationship(
         "OrganizationUsers", back_populates="user", cascade="all, delete-orphan"
     )
-    # job_applications: Mapped[list["JobApplication"]] = relationship(
-    #     "JobApplication", back_populates="candidate", cascade="all, delete-orphan"
-    # )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_user_email", "email"),
+        Index("idx_user_username", "username"),
+        Index("idx_user_workos", "workos_user_id"),
+        Index("idx_user_type", "user_type"),
+        Index("idx_user_active", "is_active"),
+        Index("idx_user_created_at", "created_at"),
+    )
 
 
 @audit_changes
@@ -196,10 +204,10 @@ class UserSession(Base, ComplianceMixin):
         index=True,
         info=compliance_column(
             sensitivity=DataSensitivity.RESTRICTED,
-            encryption=EncryptionType.END_TO_END,
+            encryption=EncryptionType.E2E,
             soc2_critical=True,
             mask_in_logs=True,
-            retention_period=DataRetentionPeriod.DAYS_90,
+            retention_period=DataRetentionPeriod.THREE_MONTHS,
         ),
     )
     refresh_token: Mapped[str | None] = mapped_column(
@@ -208,10 +216,10 @@ class UserSession(Base, ComplianceMixin):
         index=True,
         info=compliance_column(
             sensitivity=DataSensitivity.RESTRICTED,
-            encryption=EncryptionType.END_TO_END,
+            encryption=EncryptionType.E2E,
             soc2_critical=True,
             mask_in_logs=True,
-            retention_period=DataRetentionPeriod.DAYS_90,
+            retention_period=DataRetentionPeriod.THREE_MONTHS,
         ),
     )
     ip_address: Mapped[str | None] = mapped_column(
@@ -222,7 +230,7 @@ class UserSession(Base, ComplianceMixin):
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.TECHNICAL,
             soc2_critical=True,
-            retention_period=DataRetentionPeriod.DAYS_90,
+            retention_period=DataRetentionPeriod.THREE_MONTHS,
             anonymize_on_delete=True,
         ),
     )
@@ -232,7 +240,7 @@ class UserSession(Base, ComplianceMixin):
             sensitivity=DataSensitivity.INTERNAL,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.TECHNICAL,
-            retention_period=DataRetentionPeriod.DAYS_90,
+            retention_period=DataRetentionPeriod.THREE_MONTHS,
         ),
     )
 
@@ -249,6 +257,21 @@ class UserSession(Base, ComplianceMixin):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="sessions")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_user_session_user", "user_id"),
+        Index("idx_user_session_token", "session_token"),
+        Index("idx_user_session_refresh", "refresh_token"),
+        Index("idx_user_session_expires", "expires_at"),
+        # Partial index for active sessions
+        Index(
+            "idx_user_session_active",
+            "user_id",
+            "last_activity_at",
+            postgresql_where="expires_at > NOW()"
+        ),
+    )
 
 
 # ================== User Preferences Keys ================== #
@@ -330,6 +353,17 @@ class UserPreferences(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="preferences")
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_user_preferences_user", "user_id"),
+        # GIN index for JSON preferences (PostgreSQL)
+        Index(
+            "idx_user_preferences_json_gin",
+            "preferences",
+            postgresql_using="gin"
+        ),
+    )
+
 
 # ================== User Profile Model ==================== #
 @audit_changes
@@ -364,7 +398,7 @@ class UserProfile(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.CONTACT,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -375,7 +409,7 @@ class UserProfile(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.CONTACT,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )

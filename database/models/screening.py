@@ -28,7 +28,11 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.applications import Application
+    from database.models.jobs import Job
 
 
 # ==================== Enums ===================== #
@@ -153,6 +157,22 @@ class QuestionTemplate(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_question_template_org", "organization_id"),
+        Index("idx_question_template_type", "question_type"),
+        Index("idx_question_template_category", "category"),
+        Index("idx_question_template_active", "is_active"),
+        Index("idx_question_template_knockout", "is_knockout"),
+        # Partial index for active templates
+        Index(
+            "idx_question_template_active_org",
+            "organization_id",
+            "category",
+            postgresql_where="is_active = true"
+        ),
+    )
+
 
 # ==================== ScreeningQuestion Model ===================== #
 @audit_changes
@@ -235,12 +255,20 @@ class ScreeningQuestion(Base):
     )
 
     # Relationships
+    job: Mapped["Job"] = relationship("Job", back_populates="screening_questions")
     answers: Mapped[list["ScreeningAnswer"]] = relationship(
         "ScreeningAnswer", back_populates="question", cascade="all, delete-orphan"
     )
 
     # Indexes
-    __table_args__ = (Index("idx_screening_q_job", "job_id", "display_order"),)
+    __table_args__ = (
+        Index("idx_screening_question_job", "job_id"),
+        Index("idx_screening_question_template", "template_id"),
+        Index("idx_screening_question_order", "job_id", "display_order"),
+        Index("idx_screening_question_type", "question_type"),
+        Index("idx_screening_question_required", "is_required"),
+        Index("idx_screening_question_knockout", "is_knockout"),
+    )
 
 
 # ==================== ScreeningAnswer Model ===================== #
@@ -317,6 +345,9 @@ class ScreeningAnswer(Base, ComplianceMixin):
     # Relationships
     question: Mapped["ScreeningQuestion"] = relationship(
         "ScreeningQuestion", back_populates="answers"
+    )
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="screening_answers"
     )
 
     # Unique constraint

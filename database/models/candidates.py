@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     JSON,
     Enum as SQLEnum,
+    Index,
 )
 from database.engine import Base
 from database.security import ComplianceMixin, audit_changes
@@ -33,6 +34,12 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from database.models.applications import Application
+    from database.models.offers import Offer
+    from database.models.ai_evaluations import Interview, AIEvaluation
+    from database.models.talent_pools import TalentPoolMember
+    from database.models.compliance import DiversityData
+    from database.models.referrals import Referral
+    from database.models.background_checks import BackgroundCheck
 
 
 # ==================== Candidate Enums ===================== #
@@ -273,7 +280,7 @@ class Candidate(Base, ComplianceMixin):
     salary_currency: Mapped[str | None] = mapped_column(String(10))
 
     # Additional metadata
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)
     tags: Mapped[list[str] | None] = mapped_column(JSON)
 
     # Last activity tracking
@@ -300,6 +307,56 @@ class Candidate(Base, ComplianceMixin):
     )
     experience: Mapped[list["CandidateExperience"]] = relationship(
         "CandidateExperience", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    
+    # Cross-module relationships
+    offers: Mapped[list["Offer"]] = relationship(
+        "Offer", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    interviews: Mapped[list["Interview"]] = relationship(
+        "Interview", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    ai_evaluations: Mapped[list["AIEvaluation"]] = relationship(
+        "AIEvaluation", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    talent_pool_memberships: Mapped[list["TalentPoolMember"]] = relationship(
+        "TalentPoolMember", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    diversity_data: Mapped["DiversityData | None"] = relationship(
+        "DiversityData", back_populates="candidate", uselist=False, cascade="all, delete-orphan"
+    )
+    referrals_received: Mapped[list["Referral"]] = relationship(
+        "Referral", back_populates="candidate", cascade="all, delete-orphan"
+    )
+    background_checks: Mapped[list["BackgroundCheck"]] = relationship(
+        "BackgroundCheck", back_populates="candidate", cascade="all, delete-orphan"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_candidate_email", "email"),
+        Index("idx_candidate_status", "status"),
+        Index("idx_candidate_source", "source"),
+        Index("idx_candidate_created_at", "created_at"),
+        Index("idx_candidate_workos_user", "workos_user_id"),
+        # Partial index for active candidates
+        Index(
+            "idx_candidate_active",
+            "email",
+            "created_at",
+            postgresql_where="status = 'active'"
+        ),
+        # GIN indexes for JSON columns (PostgreSQL)
+        Index(
+            "idx_candidate_skills_gin",
+            "skills",
+            postgresql_using="gin"
+        ),
+        Index(
+            "idx_candidate_metadata_gin",
+            "metadata",
+            postgresql_using="gin"
+        ),
     )
 
 
@@ -353,6 +410,12 @@ class CandidateEducation(Base):
         "Candidate", back_populates="education"
     )
 
+    # Indexes
+    __table_args__ = (
+        Index("idx_candidate_education_candidate", "candidate_id"),
+        Index("idx_candidate_education_institution", "institution"),
+    )
+
 
 # ==================== Candidate Experience Model ===================== #
 @audit_changes
@@ -404,4 +467,11 @@ class CandidateExperience(Base):
     # Relationships
     candidate: Mapped["Candidate"] = relationship(
         "Candidate", back_populates="experience"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_candidate_experience_candidate", "candidate_id"),
+        Index("idx_candidate_experience_company", "company"),
+        Index("idx_candidate_experience_dates", "candidate_id", "start_date", "end_date"),
     )

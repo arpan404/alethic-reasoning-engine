@@ -290,6 +290,9 @@ class AIEvaluation(Base, ComplianceMixin):
     )
 
     # Relationships
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="ai_evaluations"
+    )
     screening_result: Mapped["AIScreeningResult | None"] = relationship(
         "AIScreeningResult",
         back_populates="evaluation",
@@ -463,6 +466,9 @@ class Interview(Base, ComplianceMixin):
     )
 
     # Relationships
+    application: Mapped["Application"] = relationship(
+        "Application", back_populates="interviews"
+    )
     recordings: Mapped[list["InterviewRecording"]] = relationship(
         "InterviewRecording",
         back_populates="interview",
@@ -794,7 +800,7 @@ class InterviewRecording(Base, ComplianceMixin):
     recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recorded_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
     participants: Mapped[list[int] | None] = mapped_column(JSON)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)
 
     # Error handling
     processing_error: Mapped[str | None] = mapped_column(Text)

@@ -22,7 +22,12 @@ from database.engine import Base
 from database.security import audit_changes
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.candidates import Candidate
+    from database.models.jobs import Job
+    from database.models.organizations import Organization
 
 
 # ==================== Enums ===================== #
@@ -138,6 +143,32 @@ class TalentPool(Base):
     campaigns: Mapped[list["TalentPoolCampaign"]] = relationship(
         "TalentPoolCampaign", back_populates="pool", cascade="all, delete-orphan"
     )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="talent_pools"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_talent_pool_org", "organization_id"),
+        Index("idx_talent_pool_type", "pool_type"),
+        Index("idx_talent_pool_active", "is_active"),
+        # Indexes for counter-based sorting/filtering
+        Index("idx_talent_pool_member_count", "member_count"),
+        Index("idx_talent_pool_engaged_count", "engaged_count"),
+        # Partial index for active pools
+        Index(
+            "idx_talent_pool_active_org",
+            "organization_id",
+            "created_at",
+            postgresql_where="is_active = true"
+        ),
+        # GIN index for JSON filter criteria
+        Index(
+            "idx_talent_pool_filter_gin",
+            "filter_criteria",
+            postgresql_using="gin"
+        ),
+    )
 
 
 # ==================== TalentPoolMember Model ===================== #
@@ -207,6 +238,9 @@ class TalentPoolMember(Base):
 
     # Relationships
     pool: Mapped["TalentPool"] = relationship("TalentPool", back_populates="members")
+    candidate: Mapped["Candidate"] = relationship(
+        "Candidate", back_populates="talent_pool_memberships"
+    )
 
     # Unique constraint
     __table_args__ = (
@@ -299,4 +333,7 @@ class TalentPoolCampaign(Base):
     # Relationships
     pool: Mapped["TalentPool"] = relationship(
         "TalentPool", back_populates="campaigns"
+    )
+    job: Mapped["Job | None"] = relationship(
+        "Job", back_populates="talent_pool_campaigns"
     )
