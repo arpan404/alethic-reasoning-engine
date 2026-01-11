@@ -1,5 +1,5 @@
 from typing import Any, TypedDict
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
     Boolean,
@@ -62,6 +62,15 @@ class OrganizationRoles(str, PyEnum):
     CONTRACTOR = "contractor"
 
 
+class InviteStatus(str, PyEnum):
+    """Status of organization invites."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
 @audit_changes
 class Organization(Base):
     """
@@ -83,7 +92,9 @@ class Organization(Base):
         BigInteger, ForeignKey("subscriptions.id")
     )
     organization_type: Mapped[OrganizationType] = mapped_column(
-        SQLEnum(OrganizationType), nullable=False, default=OrganizationType.OTHER
+        SQLEnum(OrganizationType, native_enum=False, length=50),
+        nullable=False,
+        default=OrganizationType.OTHER,
     )
     # Timestamps and audit fields
     created_at: Mapped[datetime] = mapped_column(
@@ -99,6 +110,38 @@ class Organization(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
 
+    # Relationships
+    members: Mapped[list["OrganizationUsers"]] = relationship(
+        "OrganizationUsers", back_populates="organization", cascade="all, delete-orphan"
+    )
+    invites: Mapped[list["OrganizationUserInvite"]] = relationship(
+        "OrganizationUserInvite",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+    settings: Mapped["OrganizationSettings | None"] = relationship(
+        "OrganizationSettings",
+        back_populates="organization",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    departments: Mapped[list["JobDepartment"]] = relationship(
+        "JobDepartment",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+    job_settings: Mapped["OrganizationJobSettings | None"] = relationship(
+        "OrganizationJobSettings",
+        back_populates="organization",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    jobs: Mapped[list["Job"]] = relationship(
+        "Job",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+
 
 @audit_changes
 class OrganizationUserInvite(Base):
@@ -111,11 +154,16 @@ class OrganizationUserInvite(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     organization_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizations.id"), nullable=False
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     role: Mapped[OrganizationRoles] = mapped_column(
-        SQLEnum(OrganizationRoles), nullable=False, default=OrganizationRoles.MEMBER
+        SQLEnum(OrganizationRoles, native_enum=False, length=50),
+        nullable=False,
+        default=OrganizationRoles.MEMBER,
     )
     token: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     is_accepted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -123,6 +171,7 @@ class OrganizationUserInvite(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -134,6 +183,11 @@ class OrganizationUserInvite(Base):
     )
     updated_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="invites"
     )
 
 
@@ -148,13 +202,21 @@ class OrganizationUsers(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     organization_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizations.id"), nullable=False
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=False
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     role: Mapped[OrganizationRoles] = mapped_column(
-        SQLEnum(OrganizationRoles), nullable=False, default=OrganizationRoles.MEMBER
+        SQLEnum(OrganizationRoles, native_enum=False, length=50),
+        nullable=False,
+        default=OrganizationRoles.MEMBER,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -172,9 +234,21 @@ class OrganizationUsers(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="members"
+    )
+    user: Mapped["User"] = relationship("User", back_populates="organization_memberships", foreign_keys=[user_id])
+
+
+# Forward reference for User type
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from database.models.users import User
+
 
 # ================== Organization Settings Model ==================== #
-# TODO: Expand settings as needed
 class OrganizationSettingsKey(str, PyEnum):
     """
     Keys for organization settings.
@@ -210,11 +284,13 @@ class OrganizationSettings(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     organization_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizations.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
-    settings: Mapped[dict[OrganizationSettingsKey, Any]] = mapped_column(
-        JSON, default={}
-    )
+    settings: Mapped[dict[str, Any]] = mapped_column(JSON, default={})
     ai_settings: Mapped[OrganizationAISettings | None] = mapped_column(JSON, default={})
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -228,4 +304,9 @@ class OrganizationSettings(Base):
     )
     updated_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="settings"
     )

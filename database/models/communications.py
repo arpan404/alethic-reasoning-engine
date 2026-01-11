@@ -1,5 +1,5 @@
-from typing import Literal, TypedDict, Union
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import Literal, TypedDict, Union, Any
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
     Boolean,
@@ -53,7 +53,31 @@ class MessageContent(TypedDict):
     body_html: str
 
 
-# ============ Template Config Type =============== #
+# ============ Template Enums & Types =============== #
+class EmailTemplateType(str, PyEnum):
+    """Types of email templates."""
+
+    APPLICATION_RECEIVED = "application_received"
+    INTERVIEW_INVITE = "interview_invite"
+    INTERVIEW_REMINDER = "interview_reminder"
+    REJECTION = "rejection"
+    OFFER = "offer"
+    WELCOME = "welcome"
+    PASSWORD_RESET = "password_reset"
+    VERIFICATION = "verification"
+    CUSTOM = "custom"
+
+
+class EmailProvider(str, PyEnum):
+    """Email service providers."""
+
+    SENDGRID = "sendgrid"
+    SES = "ses"
+    MAILGUN = "mailgun"
+    POSTMARK = "postmark"
+    RESEND = "resend"
+
+
 class TemplateConfigType(TypedDict):
     """Configuration for email templates."""
 
@@ -82,9 +106,11 @@ class EmailTemplate(Base):
 
     # Template details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    template_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True
-    )  # application_received, interview_invite, rejection, offer
+    template_type: Mapped[EmailTemplateType] = mapped_column(
+        SQLEnum(EmailTemplateType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
+    )
     template_data: Mapped[list[TemplateConfigType]] = mapped_column(
         JSON
     )  # JSON field storing subject, body_html, body_text with placeholders
@@ -122,18 +148,17 @@ class Message(Base):
     )
 
     sender_type: Mapped[MessageSender] = mapped_column(
-        SQLEnum(MessageSender), nullable=False
-    )  # sender and receipient
-    # sender and receipient
+        SQLEnum(MessageSender, native_enum=False, length=50), nullable=False
+    )
     sender_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     recipient_type: Mapped[MessageSender] = mapped_column(
-        SQLEnum(MessageSender), nullable=False
+        SQLEnum(MessageSender, native_enum=False, length=50), nullable=False
     )
     recipient_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
 
     # Message details
     message_type: Mapped[MessageType] = mapped_column(
-        SQLEnum(MessageType), nullable=False
+        SQLEnum(MessageType, native_enum=False, length=50), nullable=False
     )
 
     # Context
@@ -147,7 +172,9 @@ class Message(Base):
 
     # Status
     status: Mapped[MessageStatus] = mapped_column(
-        SQLEnum(MessageStatus), nullable=False, default=MessageStatus.PENDING
+        SQLEnum(MessageStatus, native_enum=False, length=50),
+        nullable=False,
+        default=MessageStatus.PENDING,
     )
 
     # timestamps
@@ -157,6 +184,11 @@ class Message(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Relationships
+    delivery_logs: Mapped[list["EmailDeliverLog"]] = relationship(
+        "EmailDeliverLog", back_populates="message", cascade="all, delete-orphan"
+    )
 
 
 # ============ Email Deliver Log =============== #
@@ -171,12 +203,15 @@ class EmailDeliverLog(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     message_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("messages.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Delivery status
     delivery_status: Mapped[MessageStatus] = mapped_column(
-        SQLEnum(MessageStatus), nullable=False
+        SQLEnum(MessageStatus, native_enum=False, length=50), nullable=False
     )
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -189,7 +224,9 @@ class EmailDeliverLog(Base):
     bcc_email: Mapped[list[str] | None] = mapped_column(ARRAY(String(255)))
 
     # Provider info
-    provider: Mapped[str | None] = mapped_column(String(50))  # sendgrid, ses, mailgun
+    provider: Mapped[EmailProvider | None] = mapped_column(
+        SQLEnum(EmailProvider, native_enum=False, length=50)
+    )
     provider_message_id: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # Timestamps
@@ -203,6 +240,9 @@ class EmailDeliverLog(Base):
         onupdate=func.now(),
     )
 
+    # Relationships
+    message: Mapped["Message"] = relationship("Message", back_populates="delivery_logs")
+
 
 # ============ Notification Model =============== #
 class NotificationType(str, PyEnum):
@@ -212,6 +252,9 @@ class NotificationType(str, PyEnum):
     APPLICATION = "application"
     INTERVIEW = "interview"
     OFFER = "offer"
+    MESSAGE = "message"
+    REMINDER = "reminder"
+
 
 @audit_changes
 class Notification(Base):
@@ -223,23 +266,24 @@ class Notification(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=False, index=True
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Notification details
     notification_type: Mapped[NotificationType] = mapped_column(
-        SQLEnum(NotificationType), nullable=False, index=True
+        SQLEnum(NotificationType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Context
     entity_type: Mapped[str | None] = mapped_column(String(50))
     entity_id: Mapped[int | None] = mapped_column(BigInteger)
     action_url: Mapped[str | None] = mapped_column(String(500))
 
-    # status
+    # Status - single definition (removed duplicate)
     is_read: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
@@ -255,6 +299,7 @@ class Notification(Base):
         onupdate=func.now(),
     )
 
+
 @audit_changes
 class NotificationPreference(Base):
     """User notification settings."""
@@ -266,7 +311,11 @@ class NotificationPreference(Base):
     )
 
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
 
     # Preferences
@@ -283,8 +332,8 @@ class NotificationPreference(Base):
         Boolean, default=True, nullable=False
     )
 
-    # Norification types preferences (JSON)
-    notification_settings: Mapped[dict | None] = mapped_column(JSON)
+    # Notification types preferences (JSON)
+    notification_settings: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

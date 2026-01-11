@@ -8,6 +8,7 @@ from sqlalchemy import (
     func,
     Text,
     JSON,
+    Enum as SQLEnum,
 )
 from database.engine import Base
 from database.models.organizations import OrganizationUsers
@@ -21,6 +22,7 @@ from database.security import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Any
 
 
 # ==================== User Type ===================== #
@@ -121,7 +123,9 @@ class User(Base, ComplianceMixin):
     )
 
     user_type: Mapped[UserType] = mapped_column(
-        String(50), nullable=False, default=UserType.RECRUITER
+        SQLEnum(UserType, native_enum=False, length=50),
+        nullable=False,
+        default=UserType.RECRUITER,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -306,10 +310,10 @@ class UserPreferences(Base):
     )
 
     # Preferences stored as JSON
-    preferences: Mapped[dict] = mapped_column(
+    preferences: Mapped[dict[str, Any]] = mapped_column(
         JSON,
         nullable=False,
-        server_default={},
+        default={},
     )
 
     # Timestamps

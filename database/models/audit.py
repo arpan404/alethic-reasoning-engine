@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
     Boolean,
@@ -7,12 +7,14 @@ from sqlalchemy import (
     DateTime,
     func,
     JSON,
+    Text,
+    Float,
     Enum as SQLEnum,
 )
 from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Text
+from typing import Any
 
 
 # ============ Audit Enums ============ #
@@ -24,6 +26,35 @@ class AuditAction(str, PyEnum):
     DELETE = "delete"
     VIEW = "view"
     EXPORT = "export"
+
+
+class AIDecisionType(str, PyEnum):
+    """Types of AI decisions for tracking."""
+
+    SCREENING = "screening"
+    SCORING = "scoring"
+    RECOMMENDATION = "recommendation"
+    REJECTION = "rejection"
+    MATCHING = "matching"
+    RANKING = "ranking"
+
+
+class AIDecisionReviewOutcome(str, PyEnum):
+    """Outcomes for human review of AI decisions."""
+
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    MODIFIED = "modified"
+    PENDING = "pending"
+
+
+class GDPRRequestStatus(str, PyEnum):
+    """Status of GDPR requests."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
 
 
 # ==================== Models ===================== #
@@ -44,15 +75,17 @@ class AuditLog(Base):
 
     # Action
     action: Mapped[AuditAction] = mapped_column(
-        SQLEnum(AuditAction, name="audit_action"), nullable=False, index=True
+        SQLEnum(AuditAction, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     entity_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
 
     # Details
     description: Mapped[str | None] = mapped_column(Text)
-    changes: Mapped[dict | None] = mapped_column(JSON)  # Before/after values
-    metadata: Mapped[dict | None] = mapped_column(JSON)
+    changes: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Before/after values
+    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     # Request context
     ip_address: Mapped[str | None] = mapped_column(String(45))
@@ -255,16 +288,18 @@ class ApplicationStatusHistory(Base):
         BigInteger, ForeignKey("applications.id"), nullable=False, index=True
     )
     from_status: Mapped[ApplicationStatus | None] = mapped_column(
-        SQLEnum(ApplicationStatus), index=True
+        SQLEnum(ApplicationStatus, native_enum=False, length=50), index=True
     )
     to_status: Mapped[ApplicationStatus] = mapped_column(
-        SQLEnum(ApplicationStatus), nullable=False, index=True
+        SQLEnum(ApplicationStatus, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     ai_from_status: Mapped[AIApplicationStatus | None] = mapped_column(
-        SQLEnum(AIApplicationStatus), index=True
+        SQLEnum(AIApplicationStatus, native_enum=False, length=50), index=True
     )
     ai_to_status: Mapped[AIApplicationStatus | None] = mapped_column(
-        SQLEnum(AIApplicationStatus), index=True
+        SQLEnum(AIApplicationStatus, native_enum=False, length=50), index=True
     )
     reason: Mapped[str | None] = mapped_column(Text)
     ai_reason: Mapped[str | None] = mapped_column(Text)
@@ -287,9 +322,11 @@ class AIDecisionLog(Base):
     )
 
     # Decision context
-    decision_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True
-    )  # screening, scoring, recommendation, rejection
+    decision_type: Mapped[AIDecisionType] = mapped_column(
+        SQLEnum(AIDecisionType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
+    )
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
@@ -299,19 +336,19 @@ class AIDecisionLog(Base):
 
     # Decision details
     decision: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence_score: Mapped[float | None] = mapped_column(JSON)
+    confidence_score: Mapped[float | None] = mapped_column(Float)
     reasoning: Mapped[str | None] = mapped_column(Text)
-    input_data: Mapped[dict | None] = mapped_column(JSON)
-    output_data: Mapped[dict | None] = mapped_column(JSON)
+    input_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    output_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     # Human review
     reviewed_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), index=True
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    review_outcome: Mapped[str | None] = mapped_column(
-        String(50)
-    )  # approved, rejected, modified
+    review_outcome: Mapped[AIDecisionReviewOutcome | None] = mapped_column(
+        SQLEnum(AIDecisionReviewOutcome, native_enum=False, length=50)
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -350,7 +387,7 @@ class DataRetentionPolicy(Base):
 
 
 # ==================== GDPR Request ====================== #
-class GDPRRequestTypeEnum(str, PyEnum):
+class GDPRRequestType(str, PyEnum):
     """Types of GDPR requests."""
 
     DATA_ACCESS = "data_access"
@@ -372,13 +409,17 @@ class GDPRRequest(Base):
         BigInteger, ForeignKey("users.id"), index=True
     )
 
-    request_type: Mapped[GDPRRequestTypeEnum] = mapped_column(
-        SQLEnum(GDPRRequestTypeEnum), nullable=False, index=True
+    request_type: Mapped[GDPRRequestType] = mapped_column(
+        SQLEnum(GDPRRequestType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
-    status: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="pending"
-    )  # pending, in_progress, completed, rejected
-    details: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[GDPRRequestStatus] = mapped_column(
+        SQLEnum(GDPRRequestStatus, native_enum=False, length=50),
+        nullable=False,
+        default=GDPRRequestStatus.PENDING,
+    )
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

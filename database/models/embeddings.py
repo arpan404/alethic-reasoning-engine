@@ -1,9 +1,9 @@
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
     BigInteger,
     DateTime,
-    func, 
+    func,
     Text,
     ForeignKey,
     Integer,
@@ -17,34 +17,84 @@ from database.engine import Base
 from datetime import datetime
 from enum import Enum as PyEnum
 
+
 # ================= Embedding Enums & Types ================== #
 class EmbeddingEntityType(str, PyEnum):
+    """Types of entities that can have embeddings."""
+
     JOB = "job"
     CANDIDATE = "candidate"
     RESUME = "resume"
     TRANSCRIPT = "transcript"
     CHAT_MESSAGE = "chat_message"
     ASSESSMENT_RESPONSE = "assessment_response"
+    SKILL = "skill"
+    COMPANY = "company"
+
 
 class EmbeddingMethod(str, PyEnum):
+    """Similarity calculation methods."""
+
     COSINE = "cosine"
     EUCLIDEAN = "euclidean"
     DOT_PRODUCT = "dot_product"
+
+
+class EmbeddingProvider(str, PyEnum):
+    """Embedding model providers."""
+
+    OPENAI = "openai"
+    COHERE = "cohere"
+    HUGGINGFACE = "huggingface"
+    VOYAGE = "voyage"
+    GOOGLE = "google"
+
+
+# ==================== Embedding Models ===================== #
+class EmbeddingModel(Base):
+    """Track which embedding models are used."""
+
+    __tablename__ = "embedding_models"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    model_version: Mapped[str | None] = mapped_column(String(50))
+    model_provider: Mapped[EmbeddingProvider] = mapped_column(
+        SQLEnum(EmbeddingProvider, native_enum=False, length=50), nullable=False
+    )
+    embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    embeddings: Mapped[list["Embedding"]] = relationship(
+        "Embedding", back_populates="model", cascade="all, delete-orphan"
+    )
+
 
 # ==================== Embedding Table ===================== #
 class Embedding(Base):
     """
     Generic embeddings table for all entity types using pgvector.
     """
+
     __tablename__ = "embeddings"
 
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
 
-    # Polymorphic entity reference
-    entity_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True
+    # Polymorphic entity reference - now type-safe
+    entity_type: Mapped[EmbeddingEntityType] = mapped_column(
+        SQLEnum(EmbeddingEntityType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
@@ -53,14 +103,15 @@ class Embedding(Base):
 
     # Embedding model info
     embedding_model_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("embedding_models.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("embedding_models.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Source text & hash for deduplication
     source_text: Mapped[str | None] = mapped_column(Text)
-    source_text_hash: Mapped[str | None] = mapped_column(
-        String(64), index=True
-    )
+    source_text_hash: Mapped[str | None] = mapped_column(String(64), index=True)
 
     # Chunking for long documents
     chunk_index: Mapped[int | None] = mapped_column(Integer)
@@ -83,6 +134,12 @@ class Embedding(Base):
         ),
     )
 
+    # Relationships
+    model: Mapped["EmbeddingModel"] = relationship(
+        "EmbeddingModel", back_populates="embeddings"
+    )
+
+
 # HNSW index for fast similarity search
 Index(
     "idx_embeddings_vector_hnsw",
@@ -92,30 +149,13 @@ Index(
     postgresql_ops={"embedding_vector": "vector_cosine_ops"},
 )
 
-# ==================== Embedding Models ===================== #
-class EmbeddingModel(Base):
-    """Track which embedding models are used."""
-    __tablename__ = "embedding_models"
-
-    id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, nullable=False, autoincrement=True
-    )
-
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    model_version: Mapped[str | None] = mapped_column(String(50))
-    model_provider: Mapped[str] = mapped_column(String(50), nullable=False)  # openai, cohere, huggingface
-    embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
 
 # ==================== Similarity Cache ===================== #
 class SimilarityCache(Base):
     """
     Cache for similarity search results to optimize repeated queries.
     """
+
     __tablename__ = "similarity_cache"
 
     id: Mapped[int] = mapped_column(
@@ -124,18 +164,22 @@ class SimilarityCache(Base):
 
     # Entity pairs
     entity_type_a: Mapped[EmbeddingEntityType] = mapped_column(
-        SQLEnum(EmbeddingEntityType), nullable=False, index=True
+        SQLEnum(EmbeddingEntityType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     entity_id_a: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     entity_type_b: Mapped[EmbeddingEntityType] = mapped_column(
-        SQLEnum(EmbeddingEntityType), nullable=False, index=True
+        SQLEnum(EmbeddingEntityType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
     )
     entity_id_b: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
     # Similarity info
     similarity_score: Mapped[float] = mapped_column(Numeric(10, 8), nullable=False)
     similarity_method: Mapped[EmbeddingMethod] = mapped_column(
-        SQLEnum(EmbeddingMethod), nullable=False
+        SQLEnum(EmbeddingMethod, native_enum=False, length=50), nullable=False
     )
 
     # Timestamps

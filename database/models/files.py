@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String,
     Boolean,
@@ -11,29 +11,37 @@ from sqlalchemy import (
 )
 from database.engine import Base
 from datetime import datetime
-from enum import enum as PyEnum
+from enum import Enum as PyEnum
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, TypedDict
 
 
-# ================== File Enum ====================
-class FileType(PyEnum):
+# ================== File Enums ====================
+class FileType(str, PyEnum):
+    """Types of files that can be uploaded."""
+
     RESUME = "resume"
     COVER_LETTER = "cover_letter"
     VIDEO = "video"
     IMAGE = "image"
     DOCUMENT = "document"
     TRANSCRIPT = "transcript"
+    AVATAR = "avatar"
+    LOGO = "logo"
 
 
-class VideoCodec(PyEnum):
+class VideoCodec(str, PyEnum):
+    """Video codecs supported."""
+
     H264 = "H.264"
     VP9 = "VP9"
     AV1 = "AV1"
     HEVC = "HEVC"
 
 
-class VideoResolution(PyEnum):
+class VideoResolution(str, PyEnum):
+    """Video resolutions supported."""
+
     P360 = "640x360"
     P480 = "854x480"
     P720 = "1280x720"
@@ -42,18 +50,57 @@ class VideoResolution(PyEnum):
     P4K = "3840x2160"
 
 
-class FileProcessingStatus(PyEnum):
+class FileProcessingStatus(str, PyEnum):
+    """File processing status."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
-class FileCompressionStatus(PyEnum):
+class FileCompressionStatus(str, PyEnum):
+    """File compression status."""
+
     NOT_COMPRESSED = "not_compressed"
     COMPRESSING = "compressing"
     COMPRESSED = "compressed"
     FAILED = "failed"
+
+
+class FileAccessLevel(str, PyEnum):
+    """Access levels for files."""
+
+    PRIVATE = "private"  # only accessible to uploader and shared users
+    PUBLIC = "public"  # accessible to public links
+    ORGANIZATION = "organization"  # accessible to entire organization
+    ALETHICS = "alethics"  # accessible to Alethics admins and AI systems
+
+
+class FileAccessPermission(str, PyEnum):
+    """Permissions for file access."""
+
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    UPDATE = "update"
+
+
+# ================== File TypedDicts ====================
+class FileAccessSettings(TypedDict):
+    """
+    Settings for file access by a user or role with specific permissions.
+    """
+
+    accessible_by: int | str  # user id or role name or role uid
+    permissions: List[FileAccessPermission]
+
+
+class FileAccessibleBy(TypedDict):
+    """Who can access a file."""
+
+    users: List[FileAccessSettings]
+    roles: List[FileAccessSettings]
 
 
 # ================== File Model ====================
@@ -84,23 +131,27 @@ class File(Base):
 
     # File type categorization
     file_type: Mapped[FileType] = mapped_column(
-        SQLEnum(FileType), nullable=False, index=True
+        SQLEnum(FileType, native_enum=False, length=50), nullable=False, index=True
     )
 
     # Video-specific metadata (nullable for non-video files)
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
-    video_codec: Mapped[VideoCodec | None] = mapped_column(SQLEnum(VideoCodec))
-    resolution: Mapped[VideoResolution | None] = mapped_column(SQLEnum(VideoResolution))
+    video_codec: Mapped[VideoCodec | None] = mapped_column(
+        SQLEnum(VideoCodec, native_enum=False, length=50)
+    )
+    resolution: Mapped[VideoResolution | None] = mapped_column(
+        SQLEnum(VideoResolution, native_enum=False, length=50)
+    )
 
     # Processing status
     processing_status: Mapped[FileProcessingStatus] = mapped_column(
-        SQLEnum(FileProcessingStatus),
+        SQLEnum(FileProcessingStatus, native_enum=False, length=50),
         default=FileProcessingStatus.PENDING,
         nullable=False,
     )
     processing_error: Mapped[str | None] = mapped_column(String(1000))
     compression_status: Mapped[FileCompressionStatus] = mapped_column(
-        SQLEnum(FileCompressionStatus),
+        SQLEnum(FileCompressionStatus, native_enum=False, length=50),
         default=FileCompressionStatus.NOT_COMPRESSED,
         nullable=False,
     )
@@ -128,33 +179,16 @@ class File(Base):
         onupdate=func.now(),
     )
 
-
-class FileAccessLevel(PyEnum):
-    PRIVATE = "private"  # only accessible to uploader and shared users
-    PUBLIC = "public"  # accessible to public links
-    ORGANIZATION = "organization"  # accessible to entire organization
-    ALETHICS = "alethics"  # accessible to Alethics admins and AI systems
-
-
-class FileAccessPermission(PyEnum):
-    READ = "read"
-    WRITE = "write"
-    DELETE = "delete"
-    UPDATE = "update"
-
-
-class FileAccessSettings(TypedDict):
-    """
-    Settings for file access by a user or role with specific permissions.
-    """
-
-    accessible_by: int | str  # user id or role name or role uid
-    permissions: List[FileAccessPermission]
-
-
-class FileAccessibleBy(TypedDict):
-    users: List[FileAccessSettings]
-    roles: List[FileAccessSettings]
+    # Relationships
+    access_controls: Mapped[list["FileAccessControl"]] = relationship(
+        "FileAccessControl", back_populates="file", cascade="all, delete-orphan"
+    )
+    share_configs: Mapped[list["FileShareConfig"]] = relationship(
+        "FileShareConfig", back_populates="file", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list["FileTag"]] = relationship(
+        "FileTag", back_populates="file", cascade="all, delete-orphan"
+    )
 
 
 # ================== File Access Control Model ====================
@@ -169,11 +203,16 @@ class FileAccessControl(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     file_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("files.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     # access levels
     access_level: Mapped[FileAccessLevel] = mapped_column(
-        SQLEnum(FileAccessLevel), default=FileAccessLevel.PRIVATE, nullable=False
+        SQLEnum(FileAccessLevel, native_enum=False, length=50),
+        default=FileAccessLevel.PRIVATE,
+        nullable=False,
     )
 
     users_with_access: Mapped[list[str]] = mapped_column(
@@ -193,6 +232,9 @@ class FileAccessControl(Base):
         onupdate=func.now(),
     )
 
+    # Relationships
+    file: Mapped["File"] = relationship("File", back_populates="access_controls")
+
 
 # ================== File Share Config Model ====================
 class FileShareConfig(Base):
@@ -206,7 +248,10 @@ class FileShareConfig(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     file_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("files.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     shareable_link: Mapped[str] = mapped_column(
         String(500), unique=True, nullable=False
@@ -223,6 +268,9 @@ class FileShareConfig(Base):
         onupdate=func.now(),
     )
 
+    # Relationships
+    file: Mapped["File"] = relationship("File", back_populates="share_configs")
+
 
 # ================== File Tag Model ====================
 class FileTag(Base):
@@ -236,7 +284,10 @@ class FileTag(Base):
         BigInteger, primary_key=True, nullable=False, autoincrement=True
     )
     file_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("files.id"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     tag: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
@@ -256,3 +307,6 @@ class FileTag(Base):
     updated_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=True
     )
+
+    # Relationships
+    file: Mapped["File"] = relationship("File", back_populates="tags")
