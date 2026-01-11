@@ -1,0 +1,48 @@
+# Worker-specific Dockerfile for Celery workers
+FROM python:3.13-slim as builder
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.7.1
+
+WORKDIR /app
+
+# Copy dependency files
+COPY apps/are/pyproject.toml apps/are/README.md ./
+
+# Install dependencies
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --no-dev --no-root
+
+# Production stage
+FROM python:3.13-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 koru && \
+    mkdir -p /app && \
+    chown -R koru:koru /app
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY --chown=koru:koru apps/are/ .
+
+# Switch to non-root user
+USER koru
+
+# Default command (Celery worker)
+CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
