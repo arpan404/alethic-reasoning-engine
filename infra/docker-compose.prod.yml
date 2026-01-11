@@ -53,7 +53,7 @@ services:
   are-api:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile.prod
+      dockerfile: apps/are/infra/Dockerfile.prod
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -95,7 +95,7 @@ services:
   are-worker:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile.worker.prod
+      dockerfile: apps/are/infra/Dockerfile.worker.prod
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-alethic}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alethic_db}
@@ -128,7 +128,7 @@ services:
   are-beat:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile.worker.prod
+      dockerfile: apps/are/infra/Dockerfile.worker.prod
     command: ["celery", "-A", "workers.celery_app", "beat", "--loglevel=info"]
     environment:
       - PYTHONUNBUFFERED=1

@@ -5,17 +5,17 @@ This document describes the Docker setup for the ARE service in the Alethic mono
 ## Files Created
 
 ### Development Mode
-1. **apps/are/Dockerfile** - Development build with hot-reload
-2. **apps/are/Dockerfile.worker** - Development worker with auto-restart
-3. **apps/are/docker-compose.dev.yml** - Development stack configuration
+1. **apps/are/infra/Dockerfile** - Development build with hot-reload
+2. **apps/are/infra/Dockerfile.worker** - Development worker with auto-restart
+3. **apps/are/infra/docker-compose.dev.yml** - Development stack configuration
 
 ### Production Mode
-4. **apps/are/Dockerfile.prod** - Production build with multiple workers
-5. **apps/are/Dockerfile.worker.prod** - Production worker optimized
-6. **apps/are/docker-compose.prod.yml** - Production stack configuration
+4. **apps/are/infra/Dockerfile.prod** - Production build with multiple workers
+5. **apps/are/infra/Dockerfile.worker.prod** - Production worker optimized
+6. **apps/are/infra/docker-compose.prod.yml** - Production stack configuration
 
 ### Common
-7. **apps/are/.dockerignore** - Optimization for Docker build context
+7. **apps/are/infra/.dockerignore** - Optimization for Docker build context
 
 ## Modes
 
@@ -132,7 +132,7 @@ docker-compose -f docker-compose.dev.yml logs -f are-api are-worker
 
 ```bash
 # Create .env.prod file first (see Environment Variables section)
-# From apps/are directory
+# From apps/are/infra directory
 docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 # Scale workers
@@ -145,7 +145,7 @@ docker-compose -f docker-compose.prod.yml up -d --scale are-worker=8
 
 ```bash
 # Start all services
-cd apps/are
+cd apps/are/infra
 docker-compose -f docker-compose.dev.yml up -d
 
 # View logs
@@ -162,7 +162,7 @@ docker-compose -f docker-compose.dev.yml up -d --build
 
 ```bash
 # Start all services
-cd apps/are
+cd apps/are/infra
 docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
 Database Migrations
 
@@ -209,7 +209,7 @@ docker-compose up -d --build are-api are-worker are-beat
 
 ### Development (.env file - optional)
 
-Create `.env` in `apps/are/` directory:
+Create `.env` in `apps/are/infra/` directory:
 
 ```bash
 # Google AI
@@ -221,7 +221,7 @@ JWT_SECRET_KEY=dev_secret_key
 
 ### Production (.env.prod file - REQUIRED)
 
-Create `.env.prod` in `apps/are/` directory:
+Create `.env.prod` in `apps/are/infra/` directory:
 
 ```bash
 # Database
@@ -372,16 +372,16 @@ Comparison: Dev vs Production
 
 ### For Development
 1. Ensure `GOOGLE_API_KEY` is in your environment
-2. Run `docker-compose -f docker-compose.dev.yml up -d`
+2. Run `cd apps/are/infra && docker-compose -f docker-compose.dev.yml up -d`
 3. Access API at http://localhost:8000/docs
 4. Start coding - changes auto-reload!
 
 ### For Production
-1. Create `.env.prod` with all required secrets
+1. Create `.env.prod` in `apps/are/infra/` with all required secrets
 2. Review resource limits in `docker-compose.prod.yml`
 3. Set up reverse proxy (nginx/traefik) for SSL
 4. Configure monitoring and logging
-5. Run `docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d`
+5. Run `cd apps/are/infra && docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d`
 6. Test thoroughly before going livenfig | grep volumes -A 5
 
 # Check if watchdog is installed
@@ -419,11 +419,11 @@ docker-compose -f docker-compose.dev.yml logs -f are-api are-worker
 
 ```bash
 # Start only infrastructure services
-cd apps/are
+cd apps/are/infra
 docker-compose -f docker-compose.dev.yml up -d postgres redis minio
 
 # Run API locally (if you prefer)
-cd apps/are
+cd ../../  # Go back to are directory
 poetry run uvicorn api.main:app --reload
 
 # Run worker locally

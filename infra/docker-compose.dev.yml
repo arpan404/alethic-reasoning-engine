@@ -54,7 +54,7 @@ services:
   are-api:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile
+      dockerfile: apps/are/infra/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -90,7 +90,7 @@ services:
   are-worker:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile.worker
+      dockerfile: apps/are/infra/Dockerfile.worker
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://alethic:alethic_dev_password@postgres:5432/alethic_db
@@ -118,7 +118,7 @@ services:
   are-beat:
     build:
       context: ../..
-      dockerfile: apps/are/Dockerfile.worker
+      dockerfile: apps/are/infra/Dockerfile.worker
     command: ["celery", "-A", "workers.celery_app", "beat", "--loglevel=info"]
     environment:
       - PYTHONUNBUFFERED=1
