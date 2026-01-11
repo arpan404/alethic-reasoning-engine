@@ -123,10 +123,18 @@ class ChatSession(Base, ComplianceMixin):
         BigInteger, ForeignKey("candidates.id"), index=True
     )
     application_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("applicants.id"), index=True
+        BigInteger, ForeignKey("applications.id"), index=True
     )
     job_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("jobs.id"), index=True
+    )
+
+    # AI evaluation sync
+    ai_evaluation_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ai_evaluations.id"), index=True
+    )
+    interview_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("interviews.id"), index=True
     )
 
     # session metadata
