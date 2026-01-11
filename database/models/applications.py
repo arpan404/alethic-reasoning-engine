@@ -774,5 +774,3 @@ class ApplicationEvaluation(Base):
         Index("idx_evaluation_app_phase", "application_id", "phase"),
         Index("idx_evaluation_requires_review", "requires_manual_review"),
     )
-        Index("idx_evaluation_phase_status", "phase", "status"),
-    )

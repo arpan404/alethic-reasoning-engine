@@ -1,54 +1,62 @@
-from pathlib import Path
-from sqlalchemy import select
-from database.models.applications import Applications
-from lib.s3 import get_file_from_s3
+"""Resume parsing and analysis agent."""
+
+from typing import Dict, Any
+from agents.base import BaseAgent
+from agents.registry import register_agent
+from agents.resume.tools import extract_contact_info, extract_experience, extract_education
 
 
-async def get_applicant_resume(application_id: int) -> Path:
-    """
-    Returns the resume of the applicant with the given application id.
+@register_agent("resume")
+class ResumeAgent(BaseAgent):
+    """Agent for parsing and analyzing resumes."""
 
-    Args:
-        application_id (int): The id of the application.
+    def __init__(self):
+        super().__init__(
+            name="resume",
+            instructions="""You are a resume parsing expert. Your job is to extract structured information from resumes.
+            
+Extract the following information:
+- Contact information (name, email, phone, location, linkedin, github)
+- Work experience (company, title, dates, description, achievements)
+- Education (institution, degree, field, dates, GPA)
+- Skills (technical skills, soft skills, languages, certifications)
+- Summary/objective
+- Projects
+- Publications
+- Awards
 
-    Returns:
-        Path: The path to the resume of the applicant.
-    """
-    try:
-        stmt = select(Applications).where(Applications.id == application_id)
-        result = await session.execute(stmt)
-        application = result.scalar_one_or_none()
-        if application is None:
-            raise ValueError(f"Application not found for id {application_id}")
-        resume_file_name = application.resume
-        if resume_file_name is None:
-            raise ValueError(f"Resume not found for application {application_id}")
+Format dates consistently as YYYY-MM-DD.
+Extract all relevant details accurately.""",
+            tools=[
+                extract_contact_info,
+                extract_experience,
+                extract_education,
+            ],
+        )
 
-        # stmt to get the actual file info from the table
-        stmt = select(File).where(File.name == resume_file_name)
-        result = await session.execute(stmt)
-        file = result.scalar_one_or_none()
-        if file is None:
-            raise ValueError(f"File not found for name {resume_file_name}")
+    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse resume and extract structured data.
+        
+        Args:
+            input_data: Dictionary with 'resume_text' key
+            
+        Returns:
+            Structured resume data
+        """
+        resume_text = input_data.get("resume_text", "")
+        
+        prompt = f"""Parse the following resume and extract all relevant information in a structured format:
 
-        resume_file = await get_file_from_s3("resume", file.key)
-        return resume_file
+{resume_text}
 
-    except Exception as e:
-        raise ValueError(f"Error getting resume for application {application_id}: {e}")
+Provide the output as a structured JSON object."""
 
-
-async def get_resume_text(resume_file: Path) -> str:
-    """
-    Returns the text of the resume file.
-
-    Args:
-        resume_file (Path): The path to the resume file.
-
-    Returns:
-        str: The text of the resume file.
-    """
-    try:
-        return resume_file.read_text()
-    except Exception as e:
-        raise ValueError(f"Error getting resume text: {e}")
+        response = await self.run(prompt)
+        
+        # Parse response into structured format
+        # TODO: Implement proper JSON parsing and validation
+        
+        return {
+            "status": "success",
+            "parsed_data": response,
+        }
