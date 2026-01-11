@@ -15,9 +15,9 @@ WORKDIR /app
 # Copy dependency files
 COPY apps/are/pyproject.toml apps/are/README.md ./
 
-# Install dependencies
+# Install dependencies (including dev)
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-dev --no-root
+    && poetry install --no-interaction --no-ansi --no-root
 
 # Production stage
 FROM python:3.13-slim
@@ -44,5 +44,5 @@ COPY --chown=koru:koru apps/are/ .
 # Switch to non-root user
 USER koru
 
-# Default command (Celery worker)
-CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+# Default command (Celery worker with auto-reload for dev)
+CMD ["watchmedo", "auto-restart", "--directory=.", "--pattern=*.py", "--recursive", "--", "celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]

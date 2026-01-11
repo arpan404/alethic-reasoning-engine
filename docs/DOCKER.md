@@ -111,6 +111,26 @@ Add the following services to `/docker-compose.yml` (root of koru monorepo):
 
 ## Usage
 
+### Development Mode (Recommended)
+
+Dev mode runs everything in Docker with **hot-reloading** - code changes automatically restart services.
+
+```bash
+# From koru root directory
+docker-compose up -d
+
+# Watch logs
+docker-compose logs -f are-api are-worker
+
+# Your code changes in apps/are/ will automatically reload!
+```
+
+The containers are configured for development:
+- ✅ FastAPI with `--reload` flag (auto-restart on file changes)
+- ✅ Celery workers with `watchmedo` auto-restart
+- ✅ Volume mounts for live code sync
+- ✅ Dev dependencies installed (watchdog, etc.)
+
 ### Start All Services
 
 ```bash
@@ -184,12 +204,17 @@ AWS_SECRET_ACCESS_KEY=koru_dev_password
 
 For production deployments:
 
-1. **Remove volume mounts** - Don't mount source code
-2. **Use secrets management** - Don't use plain text env vars
-3. **Enable SSL/TLS** - Use HTTPS with proper certificates
-4. **Resource limits** - Add CPU and memory limits
-5. **Horizontal scaling** - Scale workers based on load
-6. **Monitoring** - Add logging, metrics, and health checks
+1. **Remove `--reload` flag** - Create production Dockerfile variant:
+   ```dockerfile
+   CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+   ```
+2. **Remove volume mounts** - Don't mount source code in production
+3. **Remove watchmedo** - Use standard celery worker command
+4. **Use secrets management** - Don't use plain text env vars
+5. **Enable SSL/TLS** - Use HTTPS with proper certificates
+6. **Resource limits** - Add CPU and memory limits
+7. **Horizontal scaling** - Scale workers based on load
+8. **Monitoring** - Add logging, metrics, and health checks
 
 Example production resource limits:
 
@@ -262,6 +287,23 @@ docker-compose up -d
 ```
 
 ## Development Workflow
+
+### Recommended: Full Docker Dev Mode (Hot Reload) 🔥
+
+```bash
+# Start all services (from koru root)
+docker-compose up -d
+
+# Make code changes in apps/are/
+# Services automatically restart!
+
+# View logs
+docker-compose logs -f are-api are-worker
+```
+
+### Alternative: Hybrid Approach
+
+If you prefer running Python locally:
 
 1. **Start services**:
    ```bash

@@ -17,9 +17,9 @@ WORKDIR /app
 # Copy dependency files
 COPY apps/are/pyproject.toml apps/are/README.md ./
 
-# Install dependencies without dev packages
+# Install dependencies (including dev for hot reload)
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-dev --no-root
+    && poetry install --no-interaction --no-ansi --no-root
 
 # Production stage
 FROM python:3.13-slim
@@ -54,5 +54,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command (API server)
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command (API server with hot reload)
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
