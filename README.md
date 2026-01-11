@@ -1,6 +1,6 @@
-# Koru ATS - Applicant Tracking System
+# Alethic ARE - Alethic Reasoning Engine
 
-Modern ATS platform built with FastAPI, Google ADK agents, and Celery for async processing.
+AI-powered ATS reasoning engine built with FastAPI, Google ADK agents, and Celery for async processing.
 
 ## Tech Stack
 
