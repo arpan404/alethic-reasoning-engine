@@ -31,9 +31,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -u 1000 koru && \
+RUN useradd -m -u 1000 alethic && \
     mkdir -p /app && \
-    chown -R koru:koru /app
+    chown -R alethic:alethic /app
 
 WORKDIR /app
 
@@ -42,10 +42,10 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
-COPY --chown=koru:koru apps/are/ .
+COPY --chown=alethic:alethic apps/are/ .
 
 # Switch to non-root user
-USER koru
+USER alethic
 
 # Expose ports
 EXPOSE 8000

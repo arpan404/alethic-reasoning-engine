@@ -1,4 +1,4 @@
-# Worker-specific Dockerfile for Celery workers
+# Production worker Dockerfile for Celery workers
 FROM python:3.13-slim as builder
 
 # Install system dependencies
@@ -15,9 +15,9 @@ WORKDIR /app
 # Copy dependency files
 COPY apps/are/pyproject.toml apps/are/README.md ./
 
-# Install dependencies (including dev)
+# Install production dependencies only
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root
+    && poetry install --no-interaction --no-ansi --without dev,test --no-root
 
 # Production stage
 FROM python:3.13-slim
@@ -44,5 +44,5 @@ COPY --chown=alethic:alethic apps/are/ .
 # Switch to non-root user
 USER alethic
 
-# Default command (Celery worker with auto-reload for dev)
-CMD ["watchmedo", "auto-restart", "--directory=.", "--pattern=*.py", "--recursive", "--", "celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+# Production command (standard celery worker, no auto-reload)
+CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--max-tasks-per-child=1000"]

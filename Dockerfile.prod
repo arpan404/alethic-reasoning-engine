@@ -1,23 +1,25 @@
-# Worker-specific Dockerfile for Celery workers
+# Production multi-stage build for Alethic ARE (Alethic Reasoning Engine)
 FROM python:3.13-slim as builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
 RUN pip install poetry==1.7.1
 
+# Set working directory
 WORKDIR /app
 
 # Copy dependency files
 COPY apps/are/pyproject.toml apps/are/README.md ./
 
-# Install dependencies (including dev)
+# Install production dependencies only
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root
+    && poetry install --no-interaction --no-ansi --without dev,test --no-root
 
 # Production stage
 FROM python:3.13-slim
@@ -25,6 +27,7 @@ FROM python:3.13-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libpq5 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -44,5 +47,12 @@ COPY --chown=alethic:alethic apps/are/ .
 # Switch to non-root user
 USER alethic
 
-# Default command (Celery worker with auto-reload for dev)
-CMD ["watchmedo", "auto-restart", "--directory=.", "--pattern=*.py", "--recursive", "--", "celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+# Expose ports
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Production command with multiple workers
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

@@ -1,16 +1,42 @@
 # Docker Setup for ARE (Alethic Reasoning Engine)
 
-This document describes the Docker setup for the ARE service in the Koru monorepo.
+This document describes the Docker setup for the ARE service in the Alethic monorepo.
 
 ## Files Created
 
-1. **apps/are/Dockerfile** - Multi-stage build for FastAPI API server
-2. **apps/are/Dockerfile.worker** - Celery worker container
-3. **apps/are/.dockerignore** - Optimization for Docker build context
+### Development Mode
+1. **apps/are/Dockerfile** - Development build with hot-reload
+2. **apps/are/Dockerfile.worker** - Development worker with auto-restart
+3. **apps/are/docker-compose.dev.yml** - Development stack configuration
 
-## Docker Compose Configuration
+### Production Mode
+4. **apps/are/Dockerfile.prod** - Production build with multiple workers
+5. **apps/are/Dockerfile.worker.prod** - Production worker optimized
+6. **apps/are/docker-compose.prod.yml** - Production stack configuration
 
-Add the following services to `/docker-compose.yml` (root of koru monorepo):
+### Common
+7. **apps/are/.dockerignore** - Optimization for Docker build context
+
+## Modes
+
+### Development Mode 🔧
+- **Hot-reload** enabled for API and workers
+- Volume mounts for live code sync
+- Dev dependencies installed
+- Single instance of each service
+- User: `alethic` / Pass: `alethic_dev_password`
+
+### Production Mode 🚀
+- **Multiple workers** for high availability
+- No volume mounts (code baked into image)
+- Production dependencies only
+- Resource limits configured
+- Horizontal scaling ready
+- Secrets via environment variables
+
+## Quick Start
+
+### Development (Recommended for local work)
 
 ### ARE API Service
 
@@ -92,60 +118,60 @@ Add the following services to `/docker-compose.yml` (root of koru monorepo):
   # ARE Celery Beat - Scheduled tasks
   are-beat:
     build:
-      context: .
-      dockerfile: apps/are/Dockerfile.worker
-    command: ["celery", "-A", "workers.celery_app", "beat", "--loglevel=info"]
-    environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+asyncpg://koru:koru_dev_password@postgres:5432/koru_db
-      - REDIS_URL=redis://redis:6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    volumes:
-      - ./apps/are:/app:ro
+```bash
+# From apps/are directory
+docker-compose -f docker-compose.dev.yml up -d
+
+# Watch logs
+docker-compose -f docker-compose.dev.yml logs -f are-api are-worker
+
+# Edit code in apps/are/ - changes auto-reload!
+```
+
+### Production
+
+```bash
+# Create .env.prod file first (see Environment Variables section)
+# From apps/are directory
+docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+# Scale workers
+docker-compose -f docker-compose.prod.yml up -d --scale are-worker=8
 ```
 
 ## Usage
 
-### Development Mode (Recommended)
-
-Dev mode runs everything in Docker with **hot-reloading** - code changes automatically restart services.
+### Development Mode
 
 ```bash
-# From koru root directory
-docker-compose up -d
+# Start all services
+cd apps/are
+docker-compose -f docker-compose.dev.yml up -d
 
-# Watch logs
-docker-compose logs -f are-api are-worker
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f
 
-# Your code changes in apps/are/ will automatically reload!
+# Stop services
+docker-compose -f docker-compose.dev.yml down
+
+# Rebuild after dependency changes
+docker-compose -f docker-compose.dev.yml up -d --build
 ```
 
-The containers are configured for development:
-- ✅ FastAPI with `--reload` flag (auto-restart on file changes)
-- ✅ Celery workers with `watchmedo` auto-restart
-- ✅ Volume mounts for live code sync
-- ✅ Dev dependencies installed (watchdog, etc.)
-
-### Start All Services
+### Production Mode
 
 ```bash
-# From koru root directory
-docker-compose up -d
-```
-
-### Start Specific Services
+# Start all services
+cd apps/are
+docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
+Database Migrations
 
 ```bash
-# Just ARE services
-docker-compose up -d are-api are-worker are-beat
+# Development
+docker-compose -f docker-compose.dev.yml exec are-api alembic upgrade head
 
-# With dependencies
-docker-compose up -d postgres redis minio are-api are-worker
+# Production
+docker-compose -f docker-compose.prod.yml exec are-api alembic upgrade headrker
 ```
 
 ### View Logs
@@ -181,29 +207,42 @@ docker-compose up -d --build are-api are-worker are-beat
 
 ## Environment Variables
 
-### Required Environment Variables
+### Development (.env file - optional)
 
-Create a `.env` file in the koru root directory:
+Create `.env` in `apps/are/` directory:
 
 ```bash
 # Google AI
 GOOGLE_API_KEY=your_google_api_key_here
 
-# Security
-JWT_SECRET_KEY=your_production_jwt_secret_key
-
-# Optional - Override defaults
-DATABASE_URL=postgresql+asyncpg://koru:koru_dev_password@postgres:5432/koru_db
-REDIS_URL=redis://redis:6379
-AWS_ENDPOINT_URL=http://minio:9000
-AWS_ACCESS_KEY_ID=koru
-AWS_SECRET_ACCESS_KEY=koru_dev_password
+# Security (optional in dev, defaults provided)
+JWT_SECRET_KEY=dev_secret_key
 ```
 
-### Production Considerations
+### Production (.env.prod file - REQUIRED)
 
-For production deployments:
+Create `.env.prod` in `apps/are/` directory:
 
+```bash
+# Database
+POSTGRES_USER=alethic
+POSTGRES_PASSWOBest Practices
+
+✅ Already configured in `docker-compose.prod.yml`:
+- Multiple API workers (uvicorn with 4 workers)
+- No volume mounts (code baked into image)
+- Resource limits (CPU and memory)
+- Health checks for all services
+- Restart policies (always)
+- Horizontal scaling support
+
+🔒 Additional security recommendations:
+1. **Use secrets management** - AWS Secrets Manager, Vault, etc.
+2. **Enable SSL/TLS** - Use reverse proxy (nginx, traefik)
+3. **Network isolation** - Use internal networks
+4. **Regular updates** - Keep base images updated
+5. **Monitoring** - Add Prometheus, Grafana, ELK stack
+6. **Backups** - Automated database and volume backups
 1. **Remove `--reload` flag** - Create production Dockerfile variant:
    ```dockerfile
    CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
@@ -250,50 +289,106 @@ are-api:
 ### Container won't start
 
 ```bash
-# Check logs
-docker-compose logs are-api
+### Development
+- **are-api**: 8000 - FastAPI REST API
+- **postgres**: 5432 - PostgreSQL database  
+- **redis**: 6379 - Redis cache/broker
+- **minio**: 9000 (API), 9001 (Console) - S3-compatible storage
 
-# Check health
-docker-compose ps
+### Production
+- Ports configured via `.env.prod` file
+- Typically run behind reverse proxy (nginx/traefik)
+
+## Accessing Services
+
+### Development
+- **API Docs**: http://localhost:8000/docs
+- **API Health**: http://localhost:8000/health
+- **MinIO Console**: http://localhost:9001 (user: alethic, pass: alethic_dev_password)
+
+### Production
+- Development
+docker-compose -f docker-compose.dev.yml logs are-api
+docker-compose -f docker-compose.dev.yml ps
+
+# Production
+docker-compose -f docker-compose.prod.yml logs are-api
+docker-compose -f docker-compose.prod.yml ps
 ```
 
 ### Database connection issues
 
 ```bash
 # Verify postgres is healthy
-docker-compose ps postgres
+docker-compose -f docker-compose.dev.yml ps postgres
 
 # Test connection
-docker-compose exec are-api python -c "from database.engine import engine; print('OK')"
+docker-compose -f docker-compose.dev.yml exec are-api python -c "from database.engine import engine; print('OK')"
 ```
 
 ### Worker not processing tasks
 
 ```bash
 # Check worker logs
-docker-compose logs -f are-worker
+docker-compose -f docker-compose.dev.yml logs -f are-worker
 
-# Verify Redis connection
-docker-compose exec are-worker redis-cli -h redis ping
+# Verify Redis connection (dev)
+docker-compose -f docker-compose.dev.yml exec are-worker redis-cli -h redis ping
+
+# Verify Redis connection (prod with auth)
+docker-compose -f docker-compose.prod.yml exec are-worker redis-cli -h redis -a YOUR_REDIS_PASSWORD ping
 ```
 
 ### Build failures
 
 ```bash
-# Clean rebuild
-docker-compose down
-docker-compose build --no-cache are-api are-worker
-docker-compose up -d
+# Development - clean rebuild
+cd apps/are
+docker-compose -f docker-compose.dev.yml down
+docker-compose -f docker-compose.dev.yml build --no-cache
+docker-compose -f docker-compose.dev.yml up -d
+
+# Production - clean rebuild
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml build --no-cache
+docker-compose -f docker-compose.prod.yml up -d
 ```
+Comparison: Dev vs Production
 
-## Development Workflow
+| Feature | Development | Production |
+|---------|------------|------------|
+| **Hot Reload** | ✅ Enabled | ❌ Disabled |
+| **Volume Mounts** | ✅ Yes | ❌ No |
+| **Workers** | 1 API, 1 Worker | 2 API, 4 Workers |
+| **Resource Limits** | ❌ None | ✅ CPU/Memory limits |
+| **Dependencies** | All (dev + test) | Production only |
+| **Uvicorn Workers** | 1 (--reload) | 4 (multi-process) |
+| **Celery Config** | Watchmedo restart | Standard worker |
+| **Credentials** | Hardcoded | From .env.prod |
+| **Scaling** | Manual | Auto-scalable |
+| **Security** | Relaxed | Hardened |
 
-### Recommended: Full Docker Dev Mode (Hot Reload) 🔥
+## Next Steps
 
-```bash
-# Start all services (from koru root)
-docker-compose up -d
+### For Development
+1. Ensure `GOOGLE_API_KEY` is in your environment
+2. Run `docker-compose -f docker-compose.dev.yml up -d`
+3. Access API at http://localhost:8000/docs
+4. Start coding - changes auto-reload!
 
+### For Production
+1. Create `.env.prod` with all required secrets
+2. Review resource limits in `docker-compose.prod.yml`
+3. Set up reverse proxy (nginx/traefik) for SSL
+4. Configure monitoring and logging
+5. Run `docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d`
+6. Test thoroughly before going livenfig | grep volumes -A 5
+
+# Check if watchdog is installed
+docker-compose -f docker-compose.dev.yml exec are-worker pip list | grep watchdog
+
+# Restart services
+docker-compose -f docker-compose.dev.yml restart are-api are-worker
 # Make code changes in apps/are/
 # Services automatically restart!
 
@@ -310,26 +405,26 @@ If you prefer running Python locally:
    docker-compose up -d postgres redis minio
    ```
 
-2. **Run API locally** (faster for development):
-   ```bash
-   cd apps/are
-   poetry run uvicorn api.main:app --reload
-   ```
+cd apps/are
+docker-compose -f docker-compose.dev.yml up -d
 
-3. **Run worker locally**:
-   ```bash
-   cd apps/are
-   poetry run celery -A workers.celery_app worker --loglevel=info
-   ```
+# Make code changes in apps/are/
+# Services automatically restart!
 
-4. **When ready to test full stack**:
-   ```bash
-   docker-compose up -d --build
-   ```
+# View logs in real-time
+docker-compose -f docker-compose.dev.yml logs -f are-api are-worker
+```
 
-## Next Steps
+### Alternative: Hybrid Approach (Services in Docker, Python Local)
 
-1. Add `are-api`, `are-worker`, and `are-beat` services to `/docker-compose.yml`
-2. Create `.env` file with required keys
-3. Run `docker-compose up -d` to start all services
-4. Access API at http://localhost:8000/docs
+```bash
+# Start only infrastructure services
+cd apps/are
+docker-compose -f docker-compose.dev.yml up -d postgres redis minio
+
+# Run API locally (if you prefer)
+cd apps/are
+poetry run uvicorn api.main:app --reload
+
+# Run worker locally
+poetry run celery -A workers.celery_app worker --loglevel=info
