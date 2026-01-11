@@ -773,3 +773,704 @@ class IntegrationOutboundRequest(Base):
     __table_args__ = (
         Index("idx_outbound_request_cleanup", "created_at", "status"),
     )
+
+
+# ==================== ATS Provider Enums ===================== #
+class ATSProviderType(str, PyEnum):
+    """External ATS providers we integrate with."""
+
+    GREENHOUSE = "greenhouse"
+    LEVER = "lever"
+    WORKDAY = "workday"
+    ICIMS = "icims"
+    TALEO = "taleo"
+    SUCCESSFACTORS = "successfactors"
+    SMARTRECRUITERS = "smartrecruiters"
+    JOBVITE = "jobvite"
+    BAMBOOHR = "bamboohr"
+    ASHBY = "ashby"
+    RECRUITERFLOW = "recruiterflow"
+    BREEZY = "breezy"
+    JAZZ = "jazz"
+    WORKABLE = "workable"
+    CUSTOM = "custom"
+
+
+class SyncEntityType(str, PyEnum):
+    """Types of entities that can be synced."""
+
+    CANDIDATE = "candidate"
+    JOB = "job"
+    APPLICATION = "application"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    USER = "user"
+    DEPARTMENT = "department"
+    STAGE = "stage"
+
+
+class SyncAction(str, PyEnum):
+    """Actions performed during sync."""
+
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    CONFLICT = "conflict"
+
+
+class JobBoardType(str, PyEnum):
+    """Job board platforms."""
+
+    LINKEDIN = "linkedin"
+    INDEED = "indeed"
+    GLASSDOOR = "glassdoor"
+    ZIPRECRUITER = "ziprecruiter"
+    MONSTER = "monster"
+    CAREERBUILDER = "careerbuilder"
+    DICE = "dice"
+    ANGELLIST = "angellist"
+    WELLFOUND = "wellfound"
+    HACKER_NEWS = "hacker_news"
+    STACKOVERFLOW = "stackoverflow"
+    BUILTIN = "builtin"
+    CUSTOM = "custom"
+
+
+class PostingStatus(str, PyEnum):
+    """Status of job board posting."""
+
+    DRAFT = "draft"
+    PENDING = "pending"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    EXPIRED = "expired"
+    CLOSED = "closed"
+    REJECTED = "rejected"
+    ERROR = "error"
+
+
+# ==================== ATS Provider Model ===================== #
+@audit_changes
+class ATSProvider(Base, ComplianceMixin):
+    """
+    Configuration for external ATS providers (Greenhouse, Lever, Workday, etc.)
+    """
+
+    __tablename__ = "ats_providers"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Provider info
+    provider_type: Mapped[ATSProviderType] = mapped_column(
+        SQLEnum(ATSProviderType, native_enum=False, length=50),
+        nullable=False,
+    )
+    provider_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_url: Mapped[str | None] = mapped_column(String(500))
+
+    # API credentials (encrypted)
+    api_key: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+            soc2_critical=True,
+        ),
+    )
+    api_secret: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+            soc2_critical=True,
+        ),
+    )
+    access_token: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+        ),
+    )
+    refresh_token: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+        ),
+    )
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Account info
+    account_id: Mapped[str | None] = mapped_column(String(255))
+    subdomain: Mapped[str | None] = mapped_column(String(255))  # For Greenhouse, etc.
+
+    # Webhook configuration
+    webhook_url: Mapped[str | None] = mapped_column(String(1000))
+    webhook_secret: Mapped[str | None] = mapped_column(
+        String(255),
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+        ),
+    )
+
+    # Sync settings
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sync_direction: Mapped[SyncDirection] = mapped_column(
+        SQLEnum(SyncDirection, native_enum=False, length=50),
+        nullable=False,
+        default=SyncDirection.BIDIRECTIONAL,
+    )
+    sync_interval_minutes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=60
+    )
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Entity sync preferences
+    sync_candidates: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sync_jobs: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sync_applications: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    sync_interviews: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sync_offers: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Field mappings
+    field_mappings: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON
+    )  # {local_field: external_field}
+    custom_fields: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Status
+    status: Mapped[IntegrationStatus] = mapped_column(
+        SQLEnum(IntegrationStatus, native_enum=False, length=50),
+        nullable=False,
+        default=IntegrationStatus.PENDING,
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )  # Primary ATS
+    last_error: Mapped[str | None] = mapped_column(Text)
+    error_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    connected_by: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    entity_syncs: Mapped[list["ATSEntitySync"]] = relationship(
+        "ATSEntitySync", back_populates="provider", cascade="all, delete-orphan"
+    )
+    sync_logs: Mapped[list["ATSSyncLog"]] = relationship(
+        "ATSSyncLog", back_populates="provider", cascade="all, delete-orphan"
+    )
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "provider_type", name="uq_org_ats_provider"
+        ),
+    )
+
+
+# ==================== ATS Entity Sync Model ===================== #
+@audit_changes
+class ATSEntitySync(Base):
+    """
+    Maps external ATS entities to internal entities.
+    Tracks sync state for candidates, jobs, applications, etc.
+    """
+
+    __tablename__ = "ats_entity_syncs"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ats_providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Entity mapping
+    entity_type: Mapped[SyncEntityType] = mapped_column(
+        SQLEnum(SyncEntityType, native_enum=False, length=50),
+        nullable=False,
+        index=True,
+    )
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    internal_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
+    # External data
+    external_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    external_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Sync state
+    sync_status: Mapped[SyncStatus] = mapped_column(
+        SQLEnum(SyncStatus, native_enum=False, length=50),
+        nullable=False,
+        default=SyncStatus.COMPLETED,
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sync_hash: Mapped[str | None] = mapped_column(String(64))  # For change detection
+    conflict_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Flags
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )  # Source of truth
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Error tracking
+    last_error: Mapped[str | None] = mapped_column(Text)
+    error_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    # Relationships
+    provider: Mapped["ATSProvider"] = relationship(
+        "ATSProvider", back_populates="entity_syncs"
+    )
+
+    # Unique constraint and indexes
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id", "entity_type", "external_id", name="uq_ats_entity_external"
+        ),
+        UniqueConstraint(
+            "provider_id", "entity_type", "internal_id", name="uq_ats_entity_internal"
+        ),
+        Index("idx_ats_entity_lookup", "entity_type", "external_id"),
+    )
+
+
+# ==================== ATS Sync Log Model ===================== #
+@audit_changes
+class ATSSyncLog(Base):
+    """
+    Audit log for ATS sync operations.
+    """
+
+    __tablename__ = "ats_sync_logs"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ats_providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Sync info
+    sync_type: Mapped[SyncType] = mapped_column(
+        SQLEnum(SyncType, native_enum=False, length=50),
+        nullable=False,
+    )
+    sync_direction: Mapped[SyncDirection] = mapped_column(
+        SQLEnum(SyncDirection, native_enum=False, length=50),
+        nullable=False,
+    )
+    entity_type: Mapped[SyncEntityType | None] = mapped_column(
+        SQLEnum(SyncEntityType, native_enum=False, length=50)
+    )
+
+    # Status
+    status: Mapped[SyncStatus] = mapped_column(
+        SQLEnum(SyncStatus, native_enum=False, length=50),
+        nullable=False,
+        index=True,
+    )
+
+    # Counts
+    total_records: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    updated_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    deleted_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    conflict_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Details
+    sync_details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    errors: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+
+    # Timing
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int | None] = mapped_column(BigInteger)
+
+    # Triggered by
+    triggered_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
+    trigger_type: Mapped[str | None] = mapped_column(String(50))  # manual, scheduled, webhook
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    provider: Mapped["ATSProvider"] = relationship(
+        "ATSProvider", back_populates="sync_logs"
+    )
+
+    # Index for cleanup
+    __table_args__ = (Index("idx_ats_sync_log_cleanup", "created_at", "status"),)
+
+
+# ==================== Job Board Provider Model ===================== #
+@audit_changes
+class JobBoardProvider(Base, ComplianceMixin):
+    """
+    Configuration for job board platforms (LinkedIn, Indeed, etc.)
+    """
+
+    __tablename__ = "job_board_providers"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Provider info
+    board_type: Mapped[JobBoardType] = mapped_column(
+        SQLEnum(JobBoardType, native_enum=False, length=50),
+        nullable=False,
+    )
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # API credentials (encrypted)
+    api_key: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+            soc2_critical=True,
+        ),
+    )
+    api_secret: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+            soc2_critical=True,
+        ),
+    )
+    access_token: Mapped[str | None] = mapped_column(
+        Text,
+        info=compliance_column(
+            sensitivity=DataSensitivity.RESTRICTED,
+            encryption=EncryptionType.AT_REST,
+            mask_in_logs=True,
+        ),
+    )
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Account info
+    account_id: Mapped[str | None] = mapped_column(String(255))
+    company_page_url: Mapped[str | None] = mapped_column(String(500))
+    employer_id: Mapped[str | None] = mapped_column(String(255))
+
+    # Posting settings
+    auto_post: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    default_budget_daily: Mapped[int | None] = mapped_column(BigInteger)  # In cents
+    default_duration_days: Mapped[int | None] = mapped_column(BigInteger)
+
+    # Status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    connected_by: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    postings: Mapped[list["JobBoardPosting"]] = relationship(
+        "JobBoardPosting", back_populates="provider", cascade="all, delete-orphan"
+    )
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint("organization_id", "board_type", name="uq_org_job_board"),
+    )
+
+
+# ==================== Job Board Posting Model ===================== #
+@audit_changes
+class JobBoardPosting(Base):
+    """
+    Tracks job postings on external job boards.
+    """
+
+    __tablename__ = "job_board_postings"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("job_board_providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # External reference
+    external_posting_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    external_url: Mapped[str | None] = mapped_column(String(1000))
+    apply_url: Mapped[str | None] = mapped_column(String(1000))
+
+    # Status
+    status: Mapped[PostingStatus] = mapped_column(
+        SQLEnum(PostingStatus, native_enum=False, length=50),
+        nullable=False,
+        default=PostingStatus.DRAFT,
+        index=True,
+    )
+
+    # Posting content (may differ from job)
+    posted_title: Mapped[str | None] = mapped_column(String(255))
+    posted_description: Mapped[str | None] = mapped_column(Text)
+    posted_salary_min: Mapped[int | None] = mapped_column(BigInteger)
+    posted_salary_max: Mapped[int | None] = mapped_column(BigInteger)
+
+    # Scheduling
+    scheduled_post_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Budget
+    budget_daily: Mapped[int | None] = mapped_column(BigInteger)  # In cents
+    budget_total: Mapped[int | None] = mapped_column(BigInteger)
+    spent_total: Mapped[int | None] = mapped_column(BigInteger)
+
+    # Stats
+    views_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    clicks_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    applications_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Error tracking
+    last_error: Mapped[str | None] = mapped_column(Text)
+    error_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    posted_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
+
+    # Relationships
+    provider: Mapped["JobBoardProvider"] = relationship(
+        "JobBoardProvider", back_populates="postings"
+    )
+    applications: Mapped[list["JobBoardApplication"]] = relationship(
+        "JobBoardApplication", back_populates="posting", cascade="all, delete-orphan"
+    )
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint("provider_id", "job_id", name="uq_provider_job_posting"),
+        Index("idx_posting_status", "organization_id", "status"),
+    )
+
+
+# ==================== Job Board Application Model ===================== #
+@audit_changes
+class JobBoardApplication(Base, ComplianceMixin):
+    """
+    Inbound applications from job boards.
+    """
+
+    __tablename__ = "job_board_applications"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+    posting_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("job_board_postings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # External reference
+    external_application_id: Mapped[str | None] = mapped_column(
+        String(255), index=True
+    )
+    source_platform: Mapped[JobBoardType] = mapped_column(
+        SQLEnum(JobBoardType, native_enum=False, length=50),
+        nullable=False,
+    )
+
+    # Candidate info (before matching/creation)
+    candidate_email: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+        info=compliance_column(
+            sensitivity=DataSensitivity.CONFIDENTIAL,
+            pii=True,
+        ),
+    )
+    candidate_first_name: Mapped[str | None] = mapped_column(
+        String(100),
+        info=compliance_column(pii=True),
+    )
+    candidate_last_name: Mapped[str | None] = mapped_column(
+        String(100),
+        info=compliance_column(pii=True),
+    )
+    candidate_phone: Mapped[str | None] = mapped_column(
+        String(50),
+        info=compliance_column(pii=True),
+    )
+    candidate_linkedin: Mapped[str | None] = mapped_column(String(500))
+    candidate_location: Mapped[str | None] = mapped_column(String(255))
+
+    # Resume
+    resume_url: Mapped[str | None] = mapped_column(String(1000))
+    resume_file_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("files.id")
+    )
+
+    # Raw data
+    raw_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    cover_letter: Mapped[str | None] = mapped_column(Text)
+    answers: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Processing status
+    is_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Linked entities (after processing)
+    candidate_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("candidates.id"), index=True
+    )
+    application_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("applications.id"), index=True
+    )
+
+    # Duplicate detection
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    duplicate_of_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("job_board_applications.id")
+    )
+
+    # Timestamps
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    posting: Mapped["JobBoardPosting"] = relationship(
+        "JobBoardPosting", back_populates="applications"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_jb_app_email", "candidate_email", "job_id"),
+        Index("idx_jb_app_processed", "is_processed", "received_at"),
+    )
