@@ -64,6 +64,18 @@ class Settings(BaseSettings):
         default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
 
+    # Logging
+    log_request_body: bool = Field(default=False, alias="LOG_REQUEST_BODY")
+    log_response_body: bool = Field(default=False, alias="LOG_RESPONSE_BODY")
+    log_max_body_size: int = Field(default=1024, alias="LOG_MAX_BODY_SIZE")
+    json_logs: bool = Field(default=True, alias="JSON_LOGS")
+
+    # Rate Limiting
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+    rate_limit_per_second: int = Field(default=10, alias="RATE_LIMIT_PER_SECOND")
+    rate_limit_per_minute: int = Field(default=100, alias="RATE_LIMIT_PER_MINUTE")
+    rate_limit_per_hour: int = Field(default=1000, alias="RATE_LIMIT_PER_HOUR")
+
     # Email
     sendgrid_api_key: str | None = Field(default=None, alias="SENDGRID_API_KEY")
     from_email: str = Field(default="noreply@example.com", alias="FROM_EMAIL")

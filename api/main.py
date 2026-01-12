@@ -20,14 +20,50 @@ from api.routes.v1 import (
     agents as agents_routes,
 )
 
+# Import middleware components
+from core.middleware import (
+    ErrorHandlingMiddleware,
+    setup_error_handlers,
+    StructuredLoggingMiddleware,
+    setup_logging,
+    RateLimitMiddleware,
+    RateLimitRule,
+    RateLimitStrategy,
+    RateLimitWindow,
+)
+
+# Setup structured logging (do this first, before anything else)
+setup_logging(
+    log_level=settings.log_level,
+    json_logs=settings.json_logs,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Startup
+    logger.info(f"Starting {settings.app_name} in {settings.app_env} environment")
     await init_db()
+    
     yield
+    
     # Shutdown
+    logger.info(f"Shutting down {settings.app_name}")
+    
+    # Close rate limiter Redis connection if enabled
+    if settings.rate_limit_enabled:
+        for middleware in app.user_middleware:
+            if hasattr(middleware, 'cls'):
+                if middleware.cls.__name__ == 'RateLimitMiddleware':
+                    if hasattr(middleware, 'options') and 'kwargs' in middleware.options:
+                        limiter = middleware.options.get('kwargs', {}).get('limiter')
+                        if limiter and hasattr(limiter, 'close'):
+                            await limiter.close()
+    
     await close_db()
 
 
@@ -41,7 +77,105 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# Setup error handlers (before middleware)
+setup_error_handlers(app)
+
+# Add middleware (order matters - they execute in reverse order)
+# 1. Error handling middleware (outermost - catches all errors)
+app.add_middleware(
+    ErrorHandlingMiddleware,
+    debug=settings.debug,
+)
+
+# 2. Structured logging middleware (logs all requests/responses)
+app.add_middleware(
+    StructuredLoggingMiddleware,
+    log_request_body=settings.log_request_body,
+    log_response_body=settings.log_response_body,
+    max_body_size=settings.log_max_body_size,
+)
+
+# 3. Rate limiting middleware (innermost - only applied to valid requests)
+if settings.rate_limit_enabled:
+    # Define rate limit rules
+    rate_limit_rules = [
+        # Strict limits for authentication endpoints
+        RateLimitRule(
+            strategy=RateLimitStrategy.IP_ADDRESS,
+            window=RateLimitWindow.MINUTE,
+            max_requests=5,
+            paths=[
+                f"{settings.api_v1_prefix}/auth/login",
+                f"{settings.api_v1_prefix}/auth/register",
+                f"{settings.api_v1_prefix}/auth/forgot-password",
+            ],
+            methods=['POST'],
+        ),
+        # Strict limits for password reset
+        RateLimitRule(
+            strategy=RateLimitStrategy.IP_ADDRESS,
+            window=RateLimitWindow.HOUR,
+            max_requests=3,
+            paths=[f"{settings.api_v1_prefix}/auth/reset-password"],
+            methods=['POST'],
+        ),
+        # User-specific rate limits (per second)
+        RateLimitRule(
+            strategy=RateLimitStrategy.USER_ID,
+            window=RateLimitWindow.SECOND,
+            max_requests=settings.rate_limit_per_second,
+        ),
+        # User-specific rate limits (per minute)
+        RateLimitRule(
+            strategy=RateLimitStrategy.USER_ID,
+            window=RateLimitWindow.MINUTE,
+            max_requests=settings.rate_limit_per_minute,
+        ),
+        # User-specific rate limits (per hour)
+        RateLimitRule(
+            strategy=RateLimitStrategy.USER_ID,
+            window=RateLimitWindow.HOUR,
+            max_requests=settings.rate_limit_per_hour,
+        ),
+        # IP-based rate limits (backup for unauthenticated)
+        RateLimitRule(
+            strategy=RateLimitStrategy.IP_ADDRESS,
+            window=RateLimitWindow.MINUTE,
+            max_requests=100,
+        ),
+        RateLimitRule(
+            strategy=RateLimitStrategy.IP_ADDRESS,
+            window=RateLimitWindow.HOUR,
+            max_requests=1000,
+        ),
+        # Expensive AI operations - combined strategy
+        RateLimitRule(
+            strategy=RateLimitStrategy.COMBINED,
+            window=RateLimitWindow.MINUTE,
+            max_requests=10,
+            paths=[
+                f"{settings.api_v1_prefix}/agents/resume/parse",
+                f"{settings.api_v1_prefix}/agents/evaluation/analyze",
+                f"{settings.api_v1_prefix}/agents/screening/conduct",
+            ],
+            methods=['POST'],
+        ),
+    ]
+    
+    app.add_middleware(
+        RateLimitMiddleware,
+        redis_url=str(settings.redis_url),
+        rules=rate_limit_rules,
+        default_limits={
+            RateLimitWindow.SECOND: settings.rate_limit_per_second,
+            RateLimitWindow.MINUTE: settings.rate_limit_per_minute,
+            RateLimitWindow.HOUR: settings.rate_limit_per_hour,
+        },
+        key_prefix="are:ratelimit",
+        enable_headers=True,
+    )
+
+# 4. CORS middleware (after rate limiting)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -93,10 +227,25 @@ app.include_router(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Handle all unhandled exceptions."""
+    """
+    Handle all unhandled exceptions.
+    Note: This is a fallback - ErrorHandlingMiddleware handles most cases.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(
+        f"Unhandled exception in global handler: {type(exc).__name__}",
+        exc_info=True,
+    )
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "type": type(exc).__name__},
+        content={
+            "error": {
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "An unexpected error occurred",
+                "type": type(exc).__name__,
+            }
+        },
     )
 
 
