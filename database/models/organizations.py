@@ -63,6 +63,7 @@ class OrganizationRoles(str, PyEnum):
     HEAD_OF_TALENT = "head_of_talent"
     RECRUITER = "recruiter"
     HIRING_MANAGER = "hiring_manager"
+    INTERVIEWER = "interviewer"
     TALENT_ACQUISITION_LEAD = "talent_acquisition_lead"
     COMPLIANCE_OFFICER = "compliance_officer"
     FINANCE_CONTROLLER = "finance_controller"

@@ -109,22 +109,24 @@ ROLE_PERMISSIONS: dict[OrganizationRoles, Set[Permission]] = {
     OrganizationRoles.OWNER: {
         # Full access to everything
         Permission.ORG_CREATE, Permission.ORG_READ, Permission.ORG_UPDATE,
-        Permission.ORG_DELETE, Permission.ORG_MANAGE_USERS,
-        Permission.ORG_MANAGE_BILLING, Permission.ORG_MANAGE_SETTINGS,
+        Permission.ORG_DELETE, Permission.ORG_ADMIN,
+        Permission.ORG_MANAGE_USERS, Permission.ORG_MANAGE_BILLING, Permission.ORG_MANAGE_SETTINGS,
         Permission.JOB_CREATE, Permission.JOB_READ, Permission.JOB_UPDATE,
         Permission.JOB_DELETE, Permission.JOB_PUBLISH, Permission.JOB_CLOSE,
         Permission.APPLICATION_READ, Permission.APPLICATION_UPDATE,
         Permission.APPLICATION_REVIEW, Permission.APPLICATION_ADVANCE,
         Permission.APPLICATION_REJECT, Permission.APPLICATION_DELETE,
-        Permission.CANDIDATE_READ, Permission.CANDIDATE_UPDATE,
+        Permission.CANDIDATE_CREATE, Permission.CANDIDATE_READ, Permission.CANDIDATE_UPDATE,
         Permission.CANDIDATE_DELETE, Permission.CANDIDATE_EXPORT,
         Permission.OFFER_CREATE, Permission.OFFER_READ, Permission.OFFER_UPDATE,
-        Permission.OFFER_SEND, Permission.OFFER_REVOKE,
+        Permission.OFFER_APPROVE, Permission.OFFER_SEND, Permission.OFFER_REVOKE,
         Permission.INTERVIEW_SCHEDULE, Permission.INTERVIEW_CONDUCT,
         Permission.INTERVIEW_FEEDBACK,
         Permission.REPORT_VIEW, Permission.REPORT_EXPORT,
-        Permission.REPORT_COMPLIANCE,
+        Permission.REPORT_COMPLIANCE, Permission.ANALYTICS_VIEW,
         Permission.USER_INVITE, Permission.USER_MANAGE, Permission.USER_REMOVE,
+        Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT,
+        Permission.SYSTEM_ADMIN, Permission.SYSTEM_AUDIT,
     },
     OrganizationRoles.ADMIN: {
         # Almost full access except billing
@@ -165,7 +167,7 @@ ROLE_PERMISSIONS: dict[OrganizationRoles, Set[Permission]] = {
     OrganizationRoles.RECRUITER: {
         # Recruiting activities
         Permission.ORG_READ,
-        Permission.JOB_READ, Permission.JOB_UPDATE,
+        Permission.JOB_CREATE, Permission.JOB_READ, Permission.JOB_UPDATE,
         Permission.APPLICATION_READ, Permission.APPLICATION_UPDATE,
         Permission.APPLICATION_REVIEW, Permission.APPLICATION_ADVANCE,
         Permission.APPLICATION_REJECT,
@@ -192,6 +194,14 @@ ROLE_PERMISSIONS: dict[OrganizationRoles, Set[Permission]] = {
         Permission.CANDIDATE_READ,
         Permission.INTERVIEW_CONDUCT, Permission.INTERVIEW_FEEDBACK,
         Permission.REPORT_VIEW,
+    },
+    OrganizationRoles.INTERVIEWER: {
+        # Interview focused
+        Permission.ORG_READ,
+        Permission.JOB_READ,
+        Permission.APPLICATION_READ,
+        Permission.CANDIDATE_READ,
+        Permission.INTERVIEW_CONDUCT, Permission.INTERVIEW_FEEDBACK,
     },
     OrganizationRoles.MEMBER: {
         # Basic read access
