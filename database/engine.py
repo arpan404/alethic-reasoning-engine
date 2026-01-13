@@ -50,3 +50,9 @@ async def init_db():
         # Create pgvector extension if not exists
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+
+
+# Function to close database connections
+async def close_db():
+    """Close database engine and connections."""
+    await db_engine.dispose()

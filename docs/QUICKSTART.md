@@ -1,5 +1,7 @@
 # Quick Start Guide - Koru ATS
 
+> **Note**: For comprehensive middleware documentation (error handling, logging, rate limiting), see [MIDDLEWARE_GUIDE.md](MIDDLEWARE_GUIDE.md)
+
 ## What We Built
 
 Complete restructuring of Koru ATS with:
@@ -8,6 +10,7 @@ Complete restructuring of Koru ATS with:
 - ✅ Celery for async job processing
 - ✅ PostgreSQL with 140+ optimized indexes
 - ✅ Comprehensive folder structure
+- ✅ Production-ready middleware (GDPR/SOC2 compliant)
 
 ## 5-Minute Setup
 

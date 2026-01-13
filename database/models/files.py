@@ -8,6 +8,7 @@ from sqlalchemy import (
     func,
     Enum as SQLEnum,
     Integer,
+    Index,
 )
 from database.engine import Base
 from datetime import datetime

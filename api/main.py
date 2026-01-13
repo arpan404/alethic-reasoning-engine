@@ -18,6 +18,7 @@ from api.routes.v1 import (
     users,
     webhooks,
     agents as agents_routes,
+    auth,
 )
 
 # Import middleware components
@@ -30,6 +31,8 @@ from core.middleware import (
     RateLimitRule,
     RateLimitStrategy,
     RateLimitWindow,
+    AuthenticationMiddleware,
+    AuthorizationMiddleware,
 )
 
 # Setup structured logging (do this first, before anything else)
@@ -95,7 +98,18 @@ app.add_middleware(
     max_body_size=settings.log_max_body_size,
 )
 
-# 3. Rate limiting middleware (innermost - only applied to valid requests)
+# 3. Authentication middleware (validates JWT tokens and sessions)
+app.add_middleware(
+    AuthenticationMiddleware,
+    jwt_secret=settings.JWT_SECRET,
+    jwt_algorithm=settings.JWT_ALGORITHM,
+    token_refresh_threshold=3600,  # Refresh if < 1 hour remaining
+)
+
+# 4. Authorization middleware (checks permissions - runs after auth)
+app.add_middleware(AuthorizationMiddleware)
+
+# 5. Rate limiting middleware (innermost - only applied to valid requests)
 if settings.rate_limit_enabled:
     # Define rate limit rules
     rate_limit_rules = [
@@ -175,7 +189,7 @@ if settings.rate_limit_enabled:
         enable_headers=True,
     )
 
-# 4. CORS middleware (after rate limiting)
+# 6. CORS middleware (after rate limiting)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -188,6 +202,10 @@ app.add_middleware(
 app.include_router(health.router, tags=["Health"])
 
 # API v1 routes
+app.include_router(
+    auth.router,
+    tags=["Authentication"],
+)
 app.include_router(
     applications.router,
     prefix=f"{settings.api_v1_prefix}/applications",

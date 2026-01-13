@@ -154,7 +154,7 @@ class Candidate(Base, ComplianceMixin):
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.IDENTITY,
             soc2_critical=True,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -168,7 +168,7 @@ class Candidate(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.IDENTITY,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -180,7 +180,7 @@ class Candidate(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.IDENTITY,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -193,7 +193,7 @@ class Candidate(Base, ComplianceMixin):
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.CONTACT,
             requires_consent=True,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -241,7 +241,7 @@ class Candidate(Base, ComplianceMixin):
             pii=True,
             gdpr_relevant=True,
             gdpr_category=GDPRDataCategory.CONTACT,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
             anonymize_on_delete=True,
         ),
     )
@@ -267,7 +267,7 @@ class Candidate(Base, ComplianceMixin):
         info=compliance_column(
             sensitivity=DataSensitivity.CONFIDENTIAL,
             gdpr_relevant=True,
-            retention_period=DataRetentionPeriod.YEARS_2,
+            retention_period=DataRetentionPeriod.TWO_YEARS,
         ),
     )
 

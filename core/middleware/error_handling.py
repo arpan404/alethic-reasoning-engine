@@ -18,13 +18,23 @@ logger = logging.getLogger(__name__)
 
 # Patterns for sensitive data that should never be logged
 SENSITIVE_PATTERNS = [
-    re.compile(r'password["\s:=]+[^"\s,}]+', re.IGNORECASE),
-    re.compile(r'token["\s:=]+[^"\s,}]+', re.IGNORECASE),
-    re.compile(r'api[_-]?key["\s:=]+[^"\s,}]+', re.IGNORECASE),
-    re.compile(r'secret["\s:=]+[^"\s,}]+', re.IGNORECASE),
-    re.compile(r'authorization["\s:]+[^"\s,}]+', re.IGNORECASE),
-    re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  # SSN
-    re.compile(r'\b\d{16}\b'),  # Credit card
+    # Passwords - more comprehensive
+    re.compile(r'(password|passwd|pwd|user_password)(["\s:=]+)([^"\s,}]+)', re.IGNORECASE),
+    # Bearer tokens
+    re.compile(r'Bearer\s+[A-Za-z0-9\-_.]+', re.IGNORECASE),
+    # Tokens
+    re.compile(r'(token|access_token|refresh_token|auth_token)(["\s:=]+)([^"\s,}]+)', re.IGNORECASE),
+    # API Keys
+    re.compile(r'(api[_-]?key|apiKey|x-api-key)(["\s:=]+)([^"\s,}]+)', re.IGNORECASE),
+    # Secrets
+    re.compile(r'(secret|client_secret|SECRET_KEY)(["\s:=]+)([^"\s,}]+)', re.IGNORECASE),
+    # Authorization headers
+    re.compile(r'(authorization|Authorization)(["\s:=]+)([^"\s,}]+)', re.IGNORECASE),
+    # SSN - multiple formats
+    re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  
+    # Credit cards - multiple formats
+    re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'),
+    re.compile(r'\b\d{16}\b'),
 ]
 
 
@@ -40,7 +50,13 @@ def sanitize_error_message(message: str) -> str:
     """
     sanitized = message
     for pattern in SENSITIVE_PATTERNS:
-        sanitized = pattern.sub('[REDACTED]', sanitized)
+        # Check if the pattern has capturing groups (for field=value patterns)
+        if pattern.groups >= 3:
+            # Preserve field name and separator, redact only the value
+            sanitized = pattern.sub(r'\1\2[REDACTED]', sanitized)
+        else:
+            # Simple pattern, redact everything
+            sanitized = pattern.sub('[REDACTED]', sanitized)
     return sanitized
 
 
@@ -348,9 +364,10 @@ def setup_error_handlers(app):
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         """Handle all other exceptions."""
+        sanitized_message = sanitize_error_message(str(exc))
         logger.error(
             f"Unhandled exception: {request.method} {request.url.path} - "
-            f"{type(exc).__name__}: {sanitize_error_message(str(exc))}",
+            f"{type(exc).__name__}: {sanitized_message}",
             exc_info=True
         )
         
@@ -359,7 +376,7 @@ def setup_error_handlers(app):
             content={
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
-                    "message": "An unexpected error occurred",
+                    "message": sanitized_message,
                     "path": str(request.url.path),
                     "method": request.method,
                 }

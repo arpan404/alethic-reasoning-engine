@@ -10,6 +10,7 @@ from sqlalchemy import (
     func,
     JSON,
     Enum as SQLEnum,
+    Index,
 )
 from database.engine import Base
 from datetime import datetime

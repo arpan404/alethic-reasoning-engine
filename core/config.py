@@ -58,10 +58,21 @@ class Settings(BaseSettings):
     google_project_id: str | None = Field(default=None, alias="GOOGLE_PROJECT_ID")
 
     # Auth
-    jwt_secret_key: str = Field(..., alias="JWT_SECRET_KEY")
-    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(
-        default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
+    JWT_SECRET: str = Field(..., alias="JWT_SECRET_KEY")
+    JWT_ALGORITHM: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
+    )
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
+        default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS"
+    )
+    
+    # WorkOS SSO
+    WORKOS_API_KEY: str = Field(..., alias="WORKOS_API_KEY")
+    WORKOS_CLIENT_ID: str = Field(..., alias="WORKOS_CLIENT_ID")
+    WORKOS_REDIRECT_URI: str = Field(
+        default="http://localhost:8000/api/v1/auth/sso/callback",
+        alias="WORKOS_REDIRECT_URI"
     )
 
     # Logging
