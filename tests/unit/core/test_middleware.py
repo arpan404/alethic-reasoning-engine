@@ -186,11 +186,14 @@ class TestRateLimiting:
     async def redis_mock(self):
         """Mock Redis client."""
         redis = AsyncMock()
-        redis.pipeline.return_value = redis
-        redis.zremrangebyscore = AsyncMock(return_value=None)
-        redis.zcard = AsyncMock(return_value=5)
-        redis.zadd = AsyncMock(return_value=None)
-        redis.expire = AsyncMock(return_value=None)
+        # pipeline() returns self (non-async call)
+        redis.pipeline = Mock(return_value=redis)
+        # Pipeline commands are non-async
+        redis.zremrangebyscore = Mock(return_value=None)
+        redis.zcard = Mock(return_value=5)
+        redis.zadd = Mock(return_value=None)
+        redis.expire = Mock(return_value=None)
+        # execute() is async
         redis.execute = AsyncMock(return_value=[None, 5, None, None])
         redis.zrange = AsyncMock(return_value=[])
         redis.zrem = AsyncMock(return_value=None)
@@ -317,10 +320,14 @@ class TestSecurityCompliance:
             message = f"Error occurred: {sensitive}"
             sanitized = sanitize_error_message(message)
             
-            # Original sensitive data should not be present
-            for part in sensitive.split("="):
-                if len(part) > 5:  # Skip short strings like "token"
-                    assert part not in sanitized, f"Sensitive data '{part}' leaked"
+            # For field=value patterns, check that values are redacted
+            if "=" in sensitive:
+                field, value = sensitive.split("=", 1)
+                # Field name can remain for debugging, but value must be redacted
+                assert value not in sanitized, f"Sensitive value '{value}' leaked"
+            else:
+                # For standalone PII (SSN, credit cards), entire value should be redacted
+                assert sensitive not in sanitized, f"Sensitive data '{sensitive}' leaked"
             
             # Should contain redaction marker
             assert "[REDACTED]" in sanitized

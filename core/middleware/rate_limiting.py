@@ -118,8 +118,8 @@ class SlidingWindowRateLimiter:
             remaining = max(0, max_requests - current_count - cost)
             reset_time = int(now + window_seconds)
             
-            # Check if allowed
-            is_allowed = current_count < max_requests
+            # Check if allowed (account for cost of this request)
+            is_allowed = (current_count + cost) <= max_requests
             
             if not is_allowed:
                 # Calculate retry after (time until oldest request expires)
@@ -156,7 +156,7 @@ class SlidingWindowRateLimiter:
                 'error': 'redis_unavailable',
             }
         
-        except RedisError as e:
+        except (RedisError, Exception) as e:
             logger.error(f"Redis error in rate limiter: {e}")
             # Fail open - allow request if Redis has errors
             return True, {

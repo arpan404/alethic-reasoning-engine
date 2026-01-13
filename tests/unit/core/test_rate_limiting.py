@@ -85,10 +85,12 @@ class TestSlidingWindowAlgorithm:
         """Create mock Redis client."""
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
-        client.zremrangebyscore = AsyncMock(return_value=None)
-        client.zcard = AsyncMock(return_value=0)
-        client.zadd = AsyncMock(return_value=None)
-        client.expire = AsyncMock(return_value=None)
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock(return_value=None)
+        client.zcard = Mock(return_value=0)
+        client.zadd = Mock(return_value=None)
+        client.expire = Mock(return_value=None)
+        # execute() is async
         client.execute = AsyncMock(return_value=[None, 0, None, None])
         client.zrange = AsyncMock(return_value=[])
         client.zrem = AsyncMock(return_value=None)
@@ -635,7 +637,8 @@ class TestEdgeCases:
         request.headers = {}
         request.url = Mock(path="/api/test")
         request.method = "GET"
-        request.state = Mock()  # No user attribute
+        # Create state without user attribute
+        request.state = Mock(spec=[])  # Empty spec means no attributes
         
         user_id = middleware._get_user_id(request)
         assert user_id is None
