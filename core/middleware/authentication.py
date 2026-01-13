@@ -139,6 +139,11 @@ class AuthenticationMiddleware:
             except jwt.InvalidTokenError as e:
                 raise TokenInvalidError(f"Invalid token: {str(e)}")
             
+            # Validate token type - only access tokens allowed for protected endpoints
+            token_type = payload.get("type", "access")  # Default to access for backward compat
+            if token_type != "access":
+                raise TokenInvalidError(f"Invalid token type '{token_type}'. Access token required for this endpoint.")
+            
             # Load user and validate session
             async with get_db() as db:
                 user, session = await self._validate_user_and_session(
