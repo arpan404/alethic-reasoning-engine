@@ -47,16 +47,21 @@ Comprehensive implementation of tools and utilities for AI-powered recruiting ag
 
 ### Email Agent Tools
 
-6. **agents/email/tools.py** (NEW - 340 lines)
-   - `compose_interview_invitation()` - Generate interview emails
-   - `compose_rejection_email()` - Personalized rejection messages
-   - `compose_offer_letter()` - Job offer emails with salary and benefits
-   - `compose_application_confirmation()` - Application received emails
-   - `compose_status_update()` - Status update notifications
-   - `personalize_email_template()` - Template personalization
-   - `validate_email_content()` - Email validation
-   - `generate_email_subject()` - Subject line generation
-   - `extract_email_intent()` - Parse candidate email responses
+6. **agents/email/tools.py** (NEW - 400+ lines)
+   - **Context Preparation Functions** (LLM-driven approach):
+     - `prepare_interview_invitation_context()` - Structure context for interview emails
+     - `prepare_rejection_email_context()` - Structure context for rejection emails
+     - `prepare_offer_letter_context()` - Structure context for job offers
+     - `prepare_application_confirmation_context()` - Structure context for confirmations
+     - `prepare_status_update_context()` - Structure context for status updates
+   - **LLM Integration**:
+     - `create_email_prompt()` - Generate LLM prompts from context
+     - `parse_llm_email_response()` - Parse LLM-generated emails
+   - **Email Processing**:
+     - `validate_email_content()` - Validate generated emails
+     - `extract_email_intent()` - Parse candidate email responses
+     - `enhance_email_with_context()` - Add personalization
+     - `prepare_email_metadata()` - Email tracking metadata
 
 ### Screening Agent Tools
 
@@ -101,11 +106,12 @@ Comprehensive implementation of tools and utilities for AI-powered recruiting ag
 - Certification tracking
 
 ### Email Automation
-- Template-based email composition
-- Personalization with candidate data
-- Multiple email types (interview, rejection, offer, status)
+- Context-driven email generation (not hardcoded templates)
+- LLM integration for personalized, natural emails
+- Multiple email types (interview, rejection, offer, confirmation, status)
 - Intent extraction from candidate replies
-- Content validation
+- Content validation and quality checks
+- Metadata tracking for email workflows
 
 ### Candidate Screening
 - Multi-dimensional scoring (skills, experience, education, location, salary)
@@ -162,21 +168,46 @@ print(f"Fit Score: {score['overall_score']}")
 print(f"Recommendation: {score['recommendation']}")
 ```
 
-### Email Composition
+### Email Composition (LLM-Driven)
 ```python
-from agents.email.tools import compose_interview_invitation
+from agents.email.tools import (
+    prepare_interview_invitation_context,
+    create_email_prompt,
+    parse_llm_email_response
+)
 
-email = compose_interview_invitation(
+# Step 1: Prepare context for LLM
+context = prepare_interview_invitation_context(
     candidate_name="John Doe",
     job_title="Software Engineer",
     company_name="Tech Corp",
     interview_date=datetime(2024, 3, 15, 14, 0),
     interview_duration=60,
     interview_type="video",
-    interviewer_name="Jane Smith"
+    interviewer_name="Jane Smith",
+    additional_details={"meeting_link": "https://zoom.us/j/123456"}
 )
+
+# Step 2: Create LLM prompt
+prompt = create_email_prompt(
+    context,
+    custom_instructions="Keep it casual and friendly"
+)
+
+# Step 3: Get LLM response (using your LLM service)
+llm_response = await llm_service.generate(prompt)
+
+# Step 4: Parse the response
+email = parse_llm_email_response(llm_response)
 print(email["subject"])
 print(email["body"])
+
+# Step 5: Validate before sending
+is_valid, error = validate_email_content(
+    email["subject"],
+    email["body"],
+    required_elements=["interview", "date", "time"]
+)
 ```
 
 ### Chat Interaction

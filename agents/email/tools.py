@@ -1,4 +1,4 @@
-"""Email composition and sending tools for agents."""
+"""Email context preparation and validation tools for LLM-driven email composition."""
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def compose_interview_invitation(
+def prepare_interview_invitation_context(
     candidate_name: str,
     job_title: str,
     company_name: str,
@@ -16,8 +16,8 @@ def compose_interview_invitation(
     interview_type: str,
     interviewer_name: str,
     additional_details: Optional[Dict[str, Any]] = None,
-) -> Dict[str, str]:
-    """Compose interview invitation email.
+) -> Dict[str, Any]:
+    """Prepare context for LLM to generate interview invitation email.
     
     Args:
         candidate_name: Name of candidate
@@ -30,56 +30,42 @@ def compose_interview_invitation(
         additional_details: Optional additional details
         
     Returns:
-        Dictionary with subject and body
+        Context dictionary for LLM
     """
-    subject = f"Interview Invitation - {job_title} at {company_name}"
-    
-    meeting_link = additional_details.get("meeting_link", "") if additional_details else ""
-    location = additional_details.get("location", "") if additional_details else ""
-    
-    body = f"""Dear {candidate_name},
-
-We are pleased to invite you to interview for the {job_title} position at {company_name}.
-
-Interview Details:
-- Date: {interview_date.strftime('%A, %B %d, %Y')}
-- Time: {interview_date.strftime('%I:%M %p %Z')}
-- Duration: {interview_duration} minutes
-- Type: {interview_type}
-- Interviewer: {interviewer_name}
-"""
-    
-    if meeting_link:
-        body += f"\nMeeting Link: {meeting_link}\n"
-    
-    if location:
-        body += f"\nLocation: {location}\n"
-    
-    body += """
-Please confirm your availability by replying to this email.
-
-If you need to reschedule, please let us know as soon as possible.
-
-We look forward to speaking with you!
-
-Best regards,
-{company_name} Recruiting Team
-"""
-    
-    return {
-        "subject": subject,
-        "body": body.format(company_name=company_name),
+    context = {
+        "email_type": "interview_invitation",
+        "candidate_name": candidate_name,
+        "job_title": job_title,
+        "company_name": company_name,
+        "interview_date": interview_date.strftime('%A, %B %d, %Y'),
+        "interview_time": interview_date.strftime('%I:%M %p %Z'),
+        "interview_duration": interview_duration,
+        "interview_type": interview_type,
+        "interviewer_name": interviewer_name,
+        "tone": "professional and welcoming",
+        "key_points": [
+            "Express enthusiasm about interviewing the candidate",
+            "Provide all interview details clearly",
+            "Request confirmation of availability",
+            "Mention rescheduling options"
+        ]
     }
+    
+    if additional_details:
+        context.update(additional_details)
+    
+    return context
 
 
-def compose_rejection_email(
+def prepare_rejection_email_context(
     candidate_name: str,
     job_title: str,
     company_name: str,
     personalized_feedback: Optional[str] = None,
     keep_in_pool: bool = False,
-) -> Dict[str, str]:
-    """Compose rejection email.
+    interview_completed: bool = False,
+) -> Dict[str, Any]:
+    """Prepare context for LLM to generate rejection email.
     
     Args:
         candidate_name: Name of candidate
@@ -87,43 +73,32 @@ def compose_rejection_email(
         company_name: Company name
         personalized_feedback: Optional personalized feedback
         keep_in_pool: Whether to keep in talent pool
+        interview_completed: Whether candidate completed interviews
         
     Returns:
-        Dictionary with subject and body
+        Context dictionary for LLM
     """
-    subject = f"Update on your application - {job_title} at {company_name}"
-    
-    body = f"""Dear {candidate_name},
-
-Thank you for taking the time to apply for the {job_title} position at {company_name} and for your interest in our company.
-
-After careful consideration, we have decided to move forward with other candidates whose qualifications more closely match our current needs.
-"""
-    
-    if personalized_feedback:
-        body += f"\n{personalized_feedback}\n"
-    
-    if keep_in_pool:
-        body += """
-However, we were impressed by your background and would like to keep your information on file for future opportunities that may be a better fit.
-"""
-    
-    body += f"""
-We encourage you to apply for other positions at {company_name} that match your skills and experience.
-
-Thank you again for your interest in {company_name}.
-
-Best regards,
-{company_name} Recruiting Team
-"""
-    
-    return {
-        "subject": subject,
-        "body": body,
+    context = {
+        "email_type": "rejection",
+        "candidate_name": candidate_name,
+        "job_title": job_title,
+        "company_name": company_name,
+        "personalized_feedback": personalized_feedback,
+        "keep_in_pool": keep_in_pool,
+        "interview_completed": interview_completed,
+        "tone": "respectful and empathetic",
+        "key_points": [
+            "Thank the candidate for their time and interest",
+            "Deliver the decision clearly but compassionately",
+            "Encourage future applications if appropriate",
+            "Maintain positive relationship"
+        ]
     }
+    
+    return context
 
 
-def compose_offer_letter(
+def prepare_offer_letter_context(
     candidate_name: str,
     job_title: str,
     company_name: str,
@@ -131,8 +106,8 @@ def compose_offer_letter(
     start_date: datetime,
     benefits: List[str],
     additional_details: Optional[Dict[str, Any]] = None,
-) -> Dict[str, str]:
-    """Compose job offer letter email.
+) -> Dict[str, Any]:
+    """Prepare context for LLM to generate job offer email.
     
     Args:
         candidate_name: Name of candidate
@@ -144,58 +119,39 @@ def compose_offer_letter(
         additional_details: Optional additional details
         
     Returns:
-        Dictionary with subject and body
+        Context dictionary for LLM
     """
-    subject = f"Job Offer - {job_title} at {company_name}"
-    
-    bonus = additional_details.get("bonus", "") if additional_details else ""
-    equity = additional_details.get("equity", "") if additional_details else ""
-    
-    body = f"""Dear {candidate_name},
-
-We are delighted to extend an offer for the position of {job_title} at {company_name}.
-
-Offer Details:
-- Position: {job_title}
-- Annual Salary: ${salary:,.2f}
-"""
-    
-    if bonus:
-        body += f"- Annual Bonus: {bonus}\n"
-    
-    if equity:
-        body += f"- Equity: {equity}\n"
-    
-    body += f"- Start Date: {start_date.strftime('%B %d, %Y')}\n\n"
-    
-    body += "Benefits:\n"
-    for benefit in benefits:
-        body += f"- {benefit}\n"
-    
-    body += f"""
-Please review the attached formal offer letter and sign it by {(datetime.now() + timedelta(days=7)).strftime('%B %d, %Y')}.
-
-If you have any questions, please don't hesitate to reach out.
-
-We are excited about the possibility of you joining our team!
-
-Best regards,
-{company_name} Recruiting Team
-"""
-    
-    return {
-        "subject": subject,
-        "body": body,
+    context = {
+        "email_type": "job_offer",
+        "candidate_name": candidate_name,
+        "job_title": job_title,
+        "company_name": company_name,
+        "salary": f"${salary:,.2f}",
+        "start_date": start_date.strftime('%B %d, %Y'),
+        "benefits": benefits,
+        "response_deadline": (datetime.now() + timedelta(days=7)).strftime('%B %d, %Y'),
+        "tone": "enthusiastic and professional",
+        "key_points": [
+            "Express excitement about extending the offer",
+            "Clearly present compensation and benefits",
+            "Provide next steps and deadline",
+            "Welcome them to the team"
+        ]
     }
+    
+    if additional_details:
+        context.update(additional_details)
+    
+    return context
 
 
-def compose_application_confirmation(
+def prepare_application_confirmation_context(
     candidate_name: str,
     job_title: str,
     company_name: str,
     next_steps: Optional[str] = None,
-) -> Dict[str, str]:
-    """Compose application confirmation email.
+) -> Dict[str, Any]:
+    """Prepare context for LLM to generate application confirmation email.
     
     Args:
         candidate_name: Name of candidate
@@ -204,47 +160,35 @@ def compose_application_confirmation(
         next_steps: Optional next steps information
         
     Returns:
-        Dictionary with subject and body
+        Context dictionary for LLM
     """
-    subject = f"Application Received - {job_title} at {company_name}"
-    
-    body = f"""Dear {candidate_name},
-
-Thank you for applying to the {job_title} position at {company_name}!
-
-We have received your application and our team is currently reviewing it.
-"""
-    
-    if next_steps:
-        body += f"\n{next_steps}\n"
-    else:
-        body += """
-If your qualifications match our needs, we will contact you within 1-2 weeks to schedule an interview.
-"""
-    
-    body += f"""
-In the meantime, feel free to explore more about {company_name} on our website.
-
-Thank you for your interest in joining our team!
-
-Best regards,
-{company_name} Recruiting Team
-"""
-    
-    return {
-        "subject": subject,
-        "body": body,
+    context = {
+        "email_type": "application_confirmation",
+        "candidate_name": candidate_name,
+        "job_title": job_title,
+        "company_name": company_name,
+        "next_steps": next_steps or "We will review your application and contact you within 1-2 weeks.",
+        "tone": "friendly and appreciative",
+        "key_points": [
+            "Acknowledge receipt of application",
+            "Thank candidate for their interest",
+            "Set expectations for next steps",
+            "Encourage engagement with company"
+        ]
     }
+    
+    return context
 
 
-def compose_status_update(
+def prepare_status_update_context(
     candidate_name: str,
     job_title: str,
     company_name: str,
     current_stage: str,
     expected_timeline: Optional[str] = None,
-) -> Dict[str, str]:
-    """Compose application status update email.
+    progress_notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Prepare context for LLM to generate status update email.
     
     Args:
         candidate_name: Name of candidate
@@ -252,35 +196,136 @@ def compose_status_update(
         company_name: Company name
         current_stage: Current stage in process
         expected_timeline: Optional expected timeline
+        progress_notes: Optional additional progress information
+        
+    Returns:
+        Context dictionary for LLM
+    """
+    context = {
+        "email_type": "status_update",
+        "candidate_name": candidate_name,
+        "job_title": job_title,
+        "company_name": company_name,
+        "current_stage": current_stage,
+        "expected_timeline": expected_timeline,
+        "progress_notes": progress_notes,
+        "tone": "informative and reassuring",
+        "key_points": [
+            "Provide clear update on application status",
+            "Maintain candidate engagement",
+            "Set realistic expectations",
+            "Show appreciation for patience"
+        ]
+    }
+    
+    return context
+
+
+def create_email_prompt(
+    context: Dict[str, Any],
+    custom_instructions: Optional[str] = None,
+) -> str:
+    """Create LLM prompt for email generation.
+    
+    Args:
+        context: Email context dictionary
+        custom_instructions: Optional additional instructions
+        
+    Returns:
+        Formatted prompt for LLM
+    """
+    email_type = context.get("email_type", "email")
+    
+    prompt = f"""Generate a professional recruiting email with the following details:
+
+Email Type: {email_type}
+Candidate Name: {context.get('candidate_name')}
+Job Title: {context.get('job_title')}
+Company Name: {context.get('company_name')}
+Tone: {context.get('tone', 'professional')}
+
+Key Points to Include:
+"""
+    
+    for point in context.get('key_points', []):
+        prompt += f"- {point}\n"
+    
+    prompt += "\nAdditional Context:\n"
+    for key, value in context.items():
+        if key not in ['email_type', 'candidate_name', 'job_title', 'company_name', 'tone', 'key_points']:
+            if isinstance(value, list):
+                prompt += f"{key.replace('_', ' ').title()}:\n"
+                for item in value:
+                    prompt += f"  - {item}\n"
+            elif value:
+                prompt += f"{key.replace('_', ' ').title()}: {value}\n"
+    
+    if custom_instructions:
+        prompt += f"\nAdditional Instructions:\n{custom_instructions}\n"
+    
+    prompt += """
+Generate the email with:
+1. A compelling subject line
+2. A professional, personalized email body
+3. Appropriate formatting and structure
+
+Return the response in the following JSON format:
+{
+    "subject": "email subject line",
+    "body": "email body text"
+}
+"""
+    
+    return prompt
+
+
+def parse_llm_email_response(
+    llm_response: str,
+) -> Dict[str, str]:
+    """Parse LLM response to extract email content.
+    
+    Args:
+        llm_response: Raw LLM response
         
     Returns:
         Dictionary with subject and body
     """
-    subject = f"Application Status Update - {job_title} at {company_name}"
+    import json
+    import re
     
-    body = f"""Dear {candidate_name},
-
-We wanted to provide you with an update on your application for the {job_title} position at {company_name}.
-
-Your application is currently in the {current_stage} stage of our hiring process.
-"""
+    try:
+        # Try to extract JSON from response
+        json_match = re.search(r'\{[^{}]*"subject"[^{}]*"body"[^{}]*\}', llm_response, re.DOTALL)
+        if json_match:
+            email_data = json.loads(json_match.group(0))
+            return {
+                "subject": email_data.get("subject", ""),
+                "body": email_data.get("body", "")
+            }
+        
+        # Fallback: try to find subject and body separately
+        subject_match = re.search(r'[Ss]ubject:\s*(.+?)(?:\n|$)', llm_response)
+        body_match = re.search(r'[Bb]ody:\s*(.+)', llm_response, re.DOTALL)
+        
+        if subject_match and body_match:
+            return {
+                "subject": subject_match.group(1).strip(),
+                "body": body_match.group(1).strip()
+            }
+        
+        # If no structure found, return as body
+        logger.warning("Could not parse structured email from LLM response")
+        return {
+            "subject": "Application Update",
+            "body": llm_response.strip()
+        }
     
-    if expected_timeline:
-        body += f"\n{expected_timeline}\n"
-    
-    body += """
-We appreciate your patience and continued interest in this opportunity.
-
-If you have any questions, please don't hesitate to reach out.
-
-Best regards,
-{company_name} Recruiting Team
-"""
-    
-    return {
-        "subject": subject,
-        "body": body,
-    }
+    except Exception as e:
+        logger.error(f"Error parsing LLM email response: {e}")
+        return {
+            "subject": "Application Update",
+            "body": llm_response.strip()
+        }
 
 
 def personalize_email_template(
@@ -327,6 +372,9 @@ def validate_email_content(
     if len(subject) > 200:
         return False, "Subject too long (max 200 characters)"
     
+    if len(body) < 50:
+        return False, "Body too short (min 50 characters)"
+    
     if required_elements:
         body_lower = body.lower()
         for element in required_elements:
@@ -342,7 +390,7 @@ def generate_email_subject(
     job_title: str,
     company_name: str,
 ) -> str:
-    """Generate email subject line.
+    """Generate email subject line (fallback for non-LLM usage).
     
     Args:
         email_type: Type of email
@@ -354,10 +402,10 @@ def generate_email_subject(
         Email subject
     """
     templates = {
-        "interview": f"Interview Invitation - {job_title} at {company_name}",
+        "interview_invitation": f"Interview Invitation - {job_title} at {company_name}",
         "rejection": f"Update on your application - {job_title}",
-        "offer": f"Job Offer - {job_title} at {company_name}",
-        "confirmation": f"Application Received - {job_title}",
+        "job_offer": f"Job Offer - {job_title} at {company_name}",
+        "application_confirmation": f"Application Received - {job_title}",
         "status_update": f"Application Status Update - {job_title}",
     }
     
@@ -373,17 +421,90 @@ def extract_email_intent(email_text: str) -> str:
     Returns:
         Intent (accept, decline, reschedule, question)
     """
+    import re
+    
     email_lower = email_text.lower()
     
-    accept_keywords = ["accept", "confirm", "yes", "agree", "sounds good", "looking forward"]
-    decline_keywords = ["decline", "no longer interested", "withdraw", "cannot accept"]
-    reschedule_keywords = ["reschedule", "different time", "not available", "conflict"]
+    accept_keywords = ["accept", "confirm", "yes", "agree", "sounds good", "looking forward", "excited"]
+    decline_keywords = ["decline", "no longer interested", "withdraw", "cannot accept", "pass", "regret"]
+    reschedule_keywords = ["reschedule", "different time", "not available", "conflict", "busy", "another time"]
+    question_keywords = ["question", "wondering", "clarify", "could you", "would you", "what", "when", "how"]
     
-    if any(keyword in email_lower for keyword in accept_keywords):
-        return "accept"
-    elif any(keyword in email_lower for keyword in decline_keywords):
-        return "decline"
-    elif any(keyword in email_lower for keyword in reschedule_keywords):
-        return "reschedule"
-    else:
-        return "question"
+    # Count keyword matches
+    accept_score = sum(1 for kw in accept_keywords if kw in email_lower)
+    decline_score = sum(1 for kw in decline_keywords if kw in email_lower)
+    reschedule_score = sum(1 for kw in reschedule_keywords if kw in email_lower)
+    question_score = sum(1 for kw in question_keywords if kw in email_lower)
+    
+    # Determine intent based on highest score
+    scores = {
+        "accept": accept_score,
+        "decline": decline_score,
+        "reschedule": reschedule_score,
+        "question": question_score
+    }
+    
+    max_intent = max(scores, key=scores.get)
+    
+    # Return intent only if score is meaningful
+    if scores[max_intent] > 0:
+        return max_intent
+    
+    return "question"  # Default to question
+
+
+def enhance_email_with_context(
+    base_email: Dict[str, str],
+    candidate_data: Dict[str, Any],
+    job_data: Dict[str, Any],
+) -> Dict[str, str]:
+    """Enhance email with additional context about candidate and job.
+    
+    Args:
+        base_email: Base email dict with subject and body
+        candidate_data: Candidate information
+        job_data: Job information
+        
+    Returns:
+        Enhanced email dictionary
+    """
+    # This could be used to add personalization based on candidate profile
+    # For example, mentioning specific skills or experiences
+    
+    enhanced = base_email.copy()
+    
+    # Add personalization opportunities
+    skills_match = candidate_data.get("matched_skills", [])
+    if skills_match:
+        skills_text = ", ".join(skills_match[:3])
+        enhanced["personalization_notes"] = f"Candidate has relevant skills: {skills_text}"
+    
+    return enhanced
+
+
+def prepare_email_metadata(
+    candidate_id: str,
+    job_id: str,
+    email_type: str,
+    priority: str = "normal",
+) -> Dict[str, Any]:
+    """Prepare metadata for email tracking.
+    
+    Args:
+        candidate_id: ID of candidate
+        job_id: ID of job
+        email_type: Type of email
+        priority: Email priority
+        
+    Returns:
+        Metadata dictionary
+    """
+    return {
+        "candidate_id": candidate_id,
+        "job_id": job_id,
+        "email_type": email_type,
+        "priority": priority,
+        "created_at": datetime.now().isoformat(),
+        "requires_response": email_type in ["interview_invitation", "job_offer"],
+    }
+
