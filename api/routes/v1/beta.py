@@ -2,9 +2,10 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
+from typing import Optional
 
 from database.engine import get_db
 from database.models.beta_registrations import BetaRegistration, BetaStatus
@@ -12,12 +13,15 @@ from api.schemas.beta import (
     BetaRegistrationRequest,
     BetaRegistrationResponse,
     BetaRegistrationUpdate,
+    BetaStatusType,
+    VALID_BETA_STATUSES,
 )
 from api.schemas.common import PaginationParams, PaginatedResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/beta", tags=["beta"])
+
 
 
 @router.post(
@@ -127,17 +131,9 @@ async def update_beta_registration(
             detail="Beta registration not found",
         )
 
-    # Validate status
-    try:
-        BetaStatus(update.status)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status. Must be one of: {', '.join([s.value for s in BetaStatus])}",
-        )
-
+    # Status is already validated by Pydantic schema
     registration.status = update.status
-    if update.status == BetaStatus.APPROVED and not registration.approved_at:
+    if update.status == "approved" and not registration.approved_at:
         registration.approved_at = update.approved_at or datetime.now(timezone.utc)
 
     await db.commit()
@@ -156,7 +152,7 @@ async def update_beta_registration(
 )
 async def list_beta_registrations(
     pagination: PaginationParams = Depends(),
-    status_filter: str | None = None,
+    status_filter: Optional[BetaStatusType] = None,
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[BetaRegistrationResponse]:
     """
@@ -166,28 +162,27 @@ async def list_beta_registrations(
     - **page_size**: Items per page (default: 20, max: 100)
     - **status_filter**: Optional status filter (pending, approved, rejected, active, inactive)
     """
+    # Build base query
     query = select(BetaRegistration).order_by(desc(BetaRegistration.created_at))
+    count_query = select(func.count(BetaRegistration.id))
 
+    # Apply status filter if provided
     if status_filter:
-        try:
-            BetaStatus(status_filter)
-            query = query.where(BetaRegistration.status == status_filter)
-        except ValueError:
+        if status_filter not in VALID_BETA_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status filter. Must be one of: {', '.join([s.value for s in BetaStatus])}",
+                detail=f"Invalid status filter. Must be one of: {', '.join(VALID_BETA_STATUSES)}",
             )
+        query = query.where(BetaRegistration.status == status_filter)
+        count_query = count_query.where(BetaRegistration.status == status_filter)
 
     # Get total count
-    count_stmt = select(BetaRegistration)
-    if status_filter:
-        count_stmt = count_stmt.where(BetaRegistration.status == status_filter)
-    total_result = await db.execute(select(BetaRegistration))
-    total = len(total_result.scalars().all())
+    total_result = await db.execute(count_query)
+    total: int = total_result.scalar() or 0
 
     # Get paginated results
-    query = query.offset(pagination.offset).limit(pagination.page_size)
-    result = await db.execute(query)
+    paginated_query = query.offset(pagination.offset).limit(pagination.page_size)
+    result = await db.execute(paginated_query)
     registrations = result.scalars().all()
 
     items = [BetaRegistrationResponse.model_validate(r) for r in registrations]
