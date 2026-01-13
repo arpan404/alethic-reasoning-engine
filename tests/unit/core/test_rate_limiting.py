@@ -208,6 +208,12 @@ class TestRedisFailures:
         """Create Redis client that fails."""
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock()
+        client.zadd = Mock()
+        client.expire = Mock()
+        # execute() fails
         client.execute = AsyncMock(side_effect=RedisConnectionError("Connection failed"))
         return client
     
@@ -231,6 +237,12 @@ class TestRedisFailures:
         """Test fail open on general Redis error."""
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock()
+        client.zadd = Mock()
+        client.expire = Mock()
+        # execute() fails
         client.execute = AsyncMock(side_effect=RedisError("Redis error"))
         
         limiter = SlidingWindowRateLimiter(client)
@@ -249,6 +261,12 @@ class TestRedisFailures:
         """Test fail open on timeout."""
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock()
+        client.zadd = Mock()
+        client.expire = Mock()
+        # execute() times out
         client.execute = AsyncMock(side_effect=asyncio.TimeoutError())
         
         limiter = SlidingWindowRateLimiter(client)
@@ -419,10 +437,12 @@ class TestMiddlewareIntegration:
         with patch('core.middleware.rate_limiting.redis.from_url') as mock_redis:
             mock_client = AsyncMock()
             mock_client.pipeline = Mock(return_value=mock_client)
-            mock_client.zremrangebyscore = AsyncMock()
-            mock_client.zcard = AsyncMock(return_value=0)
-            mock_client.zadd = AsyncMock()
-            mock_client.expire = AsyncMock()
+            # Pipeline commands are non-async
+            mock_client.zremrangebyscore = Mock()
+            mock_client.zcard = Mock(return_value=0)
+            mock_client.zadd = Mock()
+            mock_client.expire = Mock()
+            # execute() is async
             mock_client.execute = AsyncMock(return_value=[None, 0, None, None])
             mock_client.zrange = AsyncMock(return_value=[])
             mock_redis.return_value = mock_client
@@ -545,10 +565,11 @@ class TestEdgeCases:
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
         client.execute = AsyncMock(return_value=[None, 0, None, None])
-        client.zremrangebyscore = AsyncMock()
-        client.zcard = AsyncMock(return_value=0)
-        client.zadd = AsyncMock()
-        client.expire = AsyncMock()
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock(return_value=0)
+        client.zadd = Mock()
+        client.expire = Mock()
         client.zrange = AsyncMock(return_value=[])
         
         limiter = SlidingWindowRateLimiter(client)
@@ -570,10 +591,11 @@ class TestEdgeCases:
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
         client.execute = AsyncMock(return_value=[None, 0, None, None])
-        client.zremrangebyscore = AsyncMock()
-        client.zcard = AsyncMock(return_value=0)
-        client.zadd = AsyncMock()
-        client.expire = AsyncMock()
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock(return_value=0)
+        client.zadd = Mock()
+        client.expire = Mock()
         client.zrange = AsyncMock(return_value=[])
         
         limiter = SlidingWindowRateLimiter(client)
@@ -592,10 +614,11 @@ class TestEdgeCases:
         client = AsyncMock()
         client.pipeline = Mock(return_value=client)
         client.execute = AsyncMock(return_value=[None, 0, None, None])
-        client.zremrangebyscore = AsyncMock()
-        client.zcard = AsyncMock(return_value=0)
-        client.zadd = AsyncMock()
-        client.expire = AsyncMock()
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock(return_value=0)
+        client.zadd = Mock()
+        client.expire = Mock()
         client.zrange = AsyncMock(return_value=[])
         
         limiter = SlidingWindowRateLimiter(client)
@@ -655,10 +678,11 @@ class TestComplianceScenarios:
         
         # Simulate user hitting limit
         client.execute = AsyncMock(return_value=[None, 100, None, None])
-        client.zremrangebyscore = AsyncMock()
-        client.zcard = AsyncMock(return_value=100)
-        client.zadd = AsyncMock()
-        client.expire = AsyncMock()
+        # Pipeline commands are non-async
+        client.zremrangebyscore = Mock()
+        client.zcard = Mock(return_value=100)
+        client.zadd = Mock()
+        client.expire = Mock()
         client.zrange = AsyncMock(return_value=[(b"oldest", time.time() - 30)])
         client.zrem = AsyncMock()
         
