@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from difflib import SequenceMatcher
 import logging
 
-from agents.common.utils_extended import weighted_average, normalize_score
+from agents.common.utils import weighted_average, normalize_score
 
 logger = logging.getLogger(__name__)
 
