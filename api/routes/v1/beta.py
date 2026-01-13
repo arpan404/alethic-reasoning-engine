@@ -6,7 +6,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
-from database.engine import get_db_session
+from database.engine import get_db
 from database.models.beta_registrations import BetaRegistration, BetaStatus
 from api.schemas.beta import (
     BetaRegistrationRequest,
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/v1/beta", tags=["beta"])
 )
 async def register_for_beta(
     request: BetaRegistrationRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> BetaRegistrationResponse:
     """
     Register a user for the beta program.
@@ -84,7 +84,7 @@ async def register_for_beta(
 )
 async def get_beta_registration(
     registration_id: int,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> BetaRegistrationResponse:
     """Get a specific beta registration."""
     stmt = select(BetaRegistration).where(BetaRegistration.id == registration_id)
@@ -109,7 +109,7 @@ async def get_beta_registration(
 async def update_beta_registration(
     registration_id: int,
     update: BetaRegistrationUpdate,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> BetaRegistrationResponse:
     """
     Update beta registration status.
@@ -157,7 +157,7 @@ async def update_beta_registration(
 async def list_beta_registrations(
     pagination: PaginationParams = Depends(),
     status_filter: str | None = None,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[BetaRegistrationResponse]:
     """
     Get paginated list of beta registrations.
@@ -203,7 +203,7 @@ async def list_beta_registrations(
 )
 async def delete_beta_registration(
     registration_id: int,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a beta registration."""
     stmt = select(BetaRegistration).where(BetaRegistration.id == registration_id)
