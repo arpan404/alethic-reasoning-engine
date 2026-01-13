@@ -5,7 +5,7 @@ from pathlib import Path
 from celery import shared_task
 import logging
 
-from lib import document_parser
+from core.parsers import document_parser
 
 logger = logging.getLogger(__name__)
 

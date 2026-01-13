@@ -310,8 +310,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             logger.warning("Rate limiter not available, allowing request")
             return await call_next(request)
         
-        # Skip rate limiting for health checks
-        if request.url.path in ['/health', '/healthz', '/metrics']:
+        # Skip rate limiting for health checks and public endpoints
+        if request.url.path in ['/health', '/healthz', '/metrics', '/api/v1/beta/register']:
             return await call_next(request)
         
         # Check rate limits

@@ -35,6 +35,7 @@ PUBLIC_ENDPOINTS = [
     "/api/v1/auth/refresh",
     "/api/v1/auth/sso/workos",
     "/api/v1/auth/sso/callback",
+    "/api/v1/beta/register",
     "/docs",
     "/redoc",
     "/openapi.json",

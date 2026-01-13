@@ -12,7 +12,7 @@ from api.schemas.candidates import (
     CandidateResponse,
 )
 from database.models.users import User
-from workers.tasks.documents import parse_resume
+# from core.parsers.resume import parse_resume  # TODO: Implement
 from workers.tasks.embeddings import generate_resume_embedding
 
 

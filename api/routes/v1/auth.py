@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, EmailStr, Field, validator
 
-from database.engine import get_db_session
+from database.engine import get_db
 from database.models.users import User, UserSession, UserType
 from database.models.organizations import Organization, OrganizationUsers, OrganizationRoles
 from core.security import (
@@ -182,7 +182,7 @@ def user_to_dict(user: User) -> dict:
 async def signup(
     request: Request,
     signup_data: SignupRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Register a new user account.
@@ -297,7 +297,7 @@ async def signup(
 async def login(
     request: Request,
     login_data: LoginRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Login with email and password.
@@ -386,7 +386,7 @@ async def login(
 @router.post("/refresh", response_model=AuthResponse)
 async def refresh_token(
     refresh_data: TokenRefreshRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Refresh access token using refresh token.
@@ -458,7 +458,7 @@ async def refresh_token(
 @router.post("/logout")
 async def logout(
     request: Request,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Logout user and revoke session.
@@ -522,7 +522,7 @@ async def workos_sso_callback(
     code: str,
     state: Optional[str] = None,
     request: Request = None,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Handle WorkOS SSO callback.
@@ -698,7 +698,7 @@ async def get_current_user(
 @router.post("/verify-email")
 async def verify_email(
     verification: EmailVerificationRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Verify user email address.
@@ -754,7 +754,7 @@ async def verify_email(
 @router.post("/forgot-password")
 async def forgot_password(
     reset_request: PasswordResetRequest,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Request password reset email.
@@ -786,7 +786,7 @@ async def forgot_password(
 @router.post("/reset-password")
 async def reset_password(
     reset_confirm: PasswordResetConfirm,
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Reset password with token.
