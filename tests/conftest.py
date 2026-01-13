@@ -11,6 +11,27 @@ from PIL import Image
 import io
 
 
+# Set environment variables BEFORE any imports that depend on them
+# This needs to happen at conftest import time, not in fixtures
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_S3_BUCKET", "test-bucket")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/1")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+os.environ.setdefault("GOOGLE_API_KEY", "test-google-key")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-min-32-chars-long-for-security")
+os.environ.setdefault("JWT_ALGORITHM", "HS256")
+os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "30")
+os.environ.setdefault("WORKOS_API_KEY", "sk_test_workos_key")
+os.environ.setdefault("WORKOS_CLIENT_ID", "client_test_workos")
+os.environ.setdefault("WORKOS_REDIRECT_URI", "http://localhost:8000/api/v1/auth/sso/callback")
+os.environ.setdefault("HASH_SALT", "test-hash-salt-32-chars-long-min")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env():
     """Set up test environment variables before running tests."""
@@ -43,6 +64,10 @@ def setup_test_env():
     os.environ.setdefault("WORKOS_API_KEY", "sk_test_workos_key")
     os.environ.setdefault("WORKOS_CLIENT_ID", "client_test_workos")
     os.environ.setdefault("WORKOS_REDIRECT_URI", "http://localhost:8000/api/v1/auth/sso/callback")
+    
+    # Security
+    os.environ.setdefault("HASH_SALT", "test-hash-salt-32-chars-long-min")
+
 
 
 @pytest.fixture
