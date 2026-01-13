@@ -19,6 +19,7 @@ from api.routes.v1 import (
     webhooks,
     agents as agents_routes,
     auth,
+    beta,
 )
 
 # Import middleware components
@@ -240,6 +241,10 @@ app.include_router(
     agents_routes.router,
     prefix=f"{settings.api_v1_prefix}/agents",
     tags=["Agents"],
+)
+app.include_router(
+    beta.router,
+    tags=["Beta"],
 )
 
 
