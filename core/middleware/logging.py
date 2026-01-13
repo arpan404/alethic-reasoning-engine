@@ -86,7 +86,19 @@ def mask_sensitive_data(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
         masked = {}
         for key, value in data.items():
             if is_sensitive_field(str(key)):
-                masked[key] = "[REDACTED]"
+                # Apply PII patterns to the value if it's a string
+                if isinstance(value, str):
+                    masked_value = value
+                    original_value = value
+                    for pattern, replacement in PII_PATTERNS:
+                        masked_value = pattern.sub(replacement, masked_value)
+                    # If no pattern matched, use generic redaction
+                    if masked_value == original_value:
+                        masked[key] = "[REDACTED]"
+                    else:
+                        masked[key] = masked_value
+                else:
+                    masked[key] = "[REDACTED]"
             else:
                 masked[key] = mask_sensitive_data(value, depth + 1, max_depth)
         return masked
@@ -171,7 +183,11 @@ def get_client_ip(request: Request) -> str:
     if ip and ip != 'unknown':
         parts = ip.split('.')
         if len(parts) == 4:
+            # Valid IPv4 address
             return f"{parts[0]}.{parts[1]}.{parts[2]}.xxx"
+        else:
+            # Not a valid IPv4, return as unknown for privacy
+            return 'unknown'
     
     return ip
 
