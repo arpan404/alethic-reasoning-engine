@@ -2,6 +2,8 @@
 
 These tools provide access to parsed document content (resumes, cover letters,
 LinkedIn profiles, portfolios) for AI analysis and decision-making.
+
+All tools are scoped by application_id to ensure proper multi-tenant data isolation.
 """
 
 from typing import Any, Dict, List, Optional
@@ -18,39 +20,55 @@ from database.models.files import File, ParsedResume
 logger = logging.getLogger(__name__)
 
 
-async def read_resume(candidate_id: int) -> Optional[Dict[str, Any]]:
-    """Read the parsed resume data for a candidate.
+async def read_resume(application_id: int) -> Optional[Dict[str, Any]]:
+    """Read the parsed resume data for an application.
     
     Returns structured resume data that has been extracted
-    from the candidate's uploaded resume file.
+    from the candidate's uploaded resume file, scoped to the application.
     
     Args:
-        candidate_id: The candidate ID
+        application_id: The application ID
         
     Returns:
         Dictionary containing parsed resume data, or None if not found
     """
     async with AsyncSessionLocal() as session:
         query = (
-            select(Candidate)
+            select(Application)
             .options(
-                selectinload(Candidate.resume_file),
-                selectinload(Candidate.education),
-                selectinload(Candidate.experience),
+                selectinload(Application.candidate).selectinload(Candidate.resume_file),
+                selectinload(Application.candidate).selectinload(Candidate.education),
+                selectinload(Application.candidate).selectinload(Candidate.experience),
+                selectinload(Application.files),
             )
-            .where(Candidate.id == candidate_id)
+            .where(Application.id == application_id)
         )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
+        if not app:
+            return None
+        
+        candidate = app.candidate
         if not candidate:
             return None
         
+        # Check for application-specific resume first
+        resume_file = None
+        for file in (app.files or []):
+            if file.file_type == "resume":
+                resume_file = file
+                break
+        
+        # Fall back to candidate's profile resume
+        if not resume_file and candidate.resume_file:
+            resume_file = candidate.resume_file
+        
         # Get parsed resume if available
         parsed_data = None
-        if candidate.resume_file:
+        if resume_file:
             parsed_query = select(ParsedResume).where(
-                ParsedResume.file_id == candidate.resume_file.id
+                ParsedResume.file_id == resume_file.id
             )
             parsed_result = await session.execute(parsed_query)
             parsed = parsed_result.scalar_one_or_none()
@@ -63,7 +81,8 @@ async def read_resume(candidate_id: int) -> Optional[Dict[str, Any]]:
                 }
         
         return {
-            "candidate_id": candidate_id,
+            "application_id": application_id,
+            "candidate_id": candidate.id,
             "name": f"{candidate.first_name} {candidate.last_name}".strip(),
             # Contact info
             "contact": {
@@ -125,6 +144,10 @@ async def read_resume(candidate_id: int) -> Optional[Dict[str, Any]]:
             },
             # Parsed resume data (if available)
             "parsed_resume": parsed_data,
+            "resume_file": {
+                "id": resume_file.id,
+                "filename": resume_file.original_filename,
+            } if resume_file else None,
         }
 
 
@@ -182,28 +205,35 @@ async def read_cover_letter(
         }
 
 
-async def read_linkedin_profile(candidate_id: int) -> Optional[Dict[str, Any]]:
-    """Read LinkedIn profile data for a candidate.
+async def read_linkedin_profile(application_id: int) -> Optional[Dict[str, Any]]:
+    """Read LinkedIn profile data for a candidate via their application.
     
     Returns imported LinkedIn profile data if available.
     
     Args:
-        candidate_id: The candidate ID
+        application_id: The application ID
         
     Returns:
         Dictionary containing LinkedIn data, or None if not imported
     """
     async with AsyncSessionLocal() as session:
-        query = select(Candidate).where(Candidate.id == candidate_id)
+        query = (
+            select(Application)
+            .options(selectinload(Application.candidate))
+            .where(Application.id == application_id)
+        )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
-        if not candidate:
+        if not app or not app.candidate:
             return None
+        
+        candidate = app.candidate
         
         if not candidate.linkedin_url and not candidate.linkedin_data:
             return {
-                "candidate_id": candidate_id,
+                "application_id": application_id,
+                "candidate_id": candidate.id,
                 "has_linkedin": False,
                 "profile_url": None,
             }
@@ -211,7 +241,8 @@ async def read_linkedin_profile(candidate_id: int) -> Optional[Dict[str, Any]]:
         linkedin_data = candidate.linkedin_data or {}
         
         return {
-            "candidate_id": candidate_id,
+            "application_id": application_id,
+            "candidate_id": candidate.id,
             "has_linkedin": True,
             "profile_url": candidate.linkedin_url,
             # Profile data (if imported)
@@ -234,35 +265,41 @@ async def read_linkedin_profile(candidate_id: int) -> Optional[Dict[str, Any]]:
         }
 
 
-async def read_portfolio(candidate_id: int) -> List[Dict[str, Any]]:
-    """Read portfolio items for a candidate.
+async def read_portfolio(application_id: int) -> Dict[str, Any]:
+    """Read portfolio items for an application.
     
-    Returns portfolio files and links associated with the candidate.
+    Returns portfolio files and links associated with the candidate,
+    scoped to this specific application.
     
     Args:
-        candidate_id: The candidate ID
+        application_id: The application ID
         
     Returns:
-        List of portfolio items
+        Dictionary with portfolio items
     """
     async with AsyncSessionLocal() as session:
         query = (
-            select(Candidate)
+            select(Application)
             .options(
-                selectinload(Candidate.applications).selectinload(Application.files),
+                selectinload(Application.candidate),
+                selectinload(Application.files),
             )
-            .where(Candidate.id == candidate_id)
+            .where(Application.id == application_id)
         )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
-        if not candidate:
-            return []
+        if not app:
+            return {
+                "application_id": application_id,
+                "items": [],
+            }
         
+        candidate = app.candidate
         portfolio_items = []
         
         # Add portfolio URL if present
-        if candidate.portfolio_url:
+        if candidate and candidate.portfolio_url:
             portfolio_items.append({
                 "type": "url",
                 "name": "Portfolio Website",
@@ -270,33 +307,36 @@ async def read_portfolio(candidate_id: int) -> List[Dict[str, Any]]:
             })
         
         # Add GitHub if present
-        if candidate.github_url:
+        if candidate and candidate.github_url:
             portfolio_items.append({
                 "type": "url",
                 "name": "GitHub Profile",
                 "url": candidate.github_url,
             })
         
-        # Collect portfolio files from all applications
-        for app in (candidate.applications or []):
-            for file in (app.files or []):
-                if file.file_type == "portfolio":
-                    # Get parsed content if available
-                    parsed_query = select(ParsedResume).where(
-                        ParsedResume.file_id == file.id
-                    )
-                    parsed_result = await session.execute(parsed_query)
-                    parsed = parsed_result.scalar_one_or_none()
-                    
-                    portfolio_items.append({
-                        "type": "file",
-                        "name": file.original_filename,
-                        "file_id": file.id,
-                        "file_type": file.mime_type,
-                        "size_bytes": file.size_bytes,
-                        "content": parsed.raw_text if parsed else None,
-                        "uploaded_at": file.created_at.isoformat() if file.created_at else None,
-                        "application_id": app.id,
-                    })
+        # Collect portfolio files from this application
+        for file in (app.files or []):
+            if file.file_type == "portfolio":
+                # Get parsed content if available
+                parsed_query = select(ParsedResume).where(
+                    ParsedResume.file_id == file.id
+                )
+                parsed_result = await session.execute(parsed_query)
+                parsed = parsed_result.scalar_one_or_none()
+                
+                portfolio_items.append({
+                    "type": "file",
+                    "name": file.original_filename,
+                    "file_id": file.id,
+                    "file_type": file.mime_type,
+                    "size_bytes": file.size_bytes,
+                    "content": parsed.raw_text if parsed else None,
+                    "uploaded_at": file.created_at.isoformat() if file.created_at else None,
+                })
         
-        return portfolio_items
+        return {
+            "application_id": application_id,
+            "candidate_id": candidate.id if candidate else None,
+            "items": portfolio_items,
+            "total": len(portfolio_items),
+        }

@@ -381,36 +381,48 @@ async def reject_candidate(
         }
 
 
-async def get_candidate_documents(candidate_id: int) -> Dict[str, Any]:
-    """Get all documents associated with a candidate.
+async def get_application_documents(application_id: int) -> Dict[str, Any]:
+    """Get all documents associated with an application.
+    
+    This properly scopes documents to a specific application,
+    ensuring multi-tenant data isolation.
     
     Args:
-        candidate_id: The candidate ID
+        application_id: The application ID
         
     Returns:
         Dictionary containing resume, cover letter, portfolio items, etc.
     """
     async with AsyncSessionLocal() as session:
         query = (
-            select(Candidate)
+            select(Application)
             .options(
-                selectinload(Candidate.resume_file),
-                selectinload(Candidate.applications).selectinload(Application.files),
+                selectinload(Application.candidate).selectinload(Candidate.resume_file),
+                selectinload(Application.files),
             )
-            .where(Candidate.id == candidate_id)
+            .where(Application.id == application_id)
         )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
+        if not app:
+            return {
+                "success": False,
+                "error": f"Application with ID {application_id} not found",
+            }
+        
+        candidate = app.candidate
         if not candidate:
             return {
                 "success": False,
-                "error": f"Candidate with ID {candidate_id} not found",
+                "error": "Candidate not found for this application",
             }
         
         documents = {
-            "candidate_id": candidate_id,
-            "name": f"{candidate.first_name} {candidate.last_name}".strip(),
+            "application_id": application_id,
+            "candidate_id": candidate.id,
+            "candidate_name": f"{candidate.first_name} {candidate.last_name}".strip(),
+            "job_id": app.job_id,
             "resume": None,
             "cover_letters": [],
             "portfolios": [],
@@ -425,22 +437,23 @@ async def get_candidate_documents(candidate_id: int) -> Dict[str, Any]:
                 "uploaded_at": candidate.resume_file.created_at.isoformat() if candidate.resume_file.created_at else None,
             }
         
-        # Get documents from applications
-        for app in (candidate.applications or []):
-            for file in (app.files or []):
-                doc_info = {
-                    "id": file.id,
-                    "filename": file.original_filename,
-                    "file_type": file.file_type,
-                    "application_id": app.id,
-                    "job_id": app.job_id,
-                }
-                
-                if file.file_type == "cover_letter":
-                    documents["cover_letters"].append(doc_info)
-                elif file.file_type == "portfolio":
-                    documents["portfolios"].append(doc_info)
-                else:
-                    documents["other_documents"].append(doc_info)
+        # Get documents from this application only
+        for file in (app.files or []):
+            doc_info = {
+                "id": file.id,
+                "filename": file.original_filename,
+                "file_type": file.file_type,
+            }
+            
+            if file.file_type == "cover_letter":
+                documents["cover_letters"].append(doc_info)
+            elif file.file_type == "portfolio":
+                documents["portfolios"].append(doc_info)
+            elif file.file_type == "resume":
+                # Application-specific resume overrides candidate resume
+                documents["resume"] = doc_info
+            else:
+                documents["other_documents"].append(doc_info)
         
         return documents
+

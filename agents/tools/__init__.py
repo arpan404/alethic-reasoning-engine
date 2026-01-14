@@ -12,7 +12,7 @@ from agents.tools.candidates import (
     update_candidate_status,
     shortlist_candidate,
     reject_candidate,
-    get_candidate_documents,
+    get_application_documents,
 )
 from agents.tools.jobs import (
     get_job,
@@ -94,7 +94,7 @@ __all__ = [
     "update_candidate_status",
     "shortlist_candidate",
     "reject_candidate",
-    "get_candidate_documents",
+    "get_application_documents",
     # Jobs
     "get_job",
     "list_jobs",
