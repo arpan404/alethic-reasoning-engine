@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import logging
 
-from sqlalchemy import select, and_, desc
+from sqlalchemy import select, and_, desc, func
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
@@ -154,7 +154,6 @@ async def list_applications(
             query = query.where(and_(*conditions))
         
         # Get total count
-        from sqlalchemy import func
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total_count = total_result.scalar()

@@ -9,6 +9,13 @@ from datetime import datetime
 import logging
 import uuid
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from database.engine import AsyncSessionLocal
+from database.models.background_checks import BackgroundCheck, BackgroundCheckResult
+from agents.tools.queue import enqueue_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +73,6 @@ async def initiate_background_check(
     request_id = f"bgc_{uuid.uuid4().hex[:12]}"
     
     # Queue the background check task
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="initiate_background_check",
         payload={
@@ -115,9 +121,6 @@ async def track_background_check_status(
     # For now, we return a mock status structure
     
     # This would typically be a database lookup + API call
-    from database.engine import AsyncSessionLocal
-    from database.models.background_checks import BackgroundCheck
-    from sqlalchemy import select
     
     async with AsyncSessionLocal() as session:
         query = select(BackgroundCheck).where(
@@ -159,10 +162,6 @@ async def get_background_check_results(
     Returns:
         Dictionary with detailed check results
     """
-    from database.engine import AsyncSessionLocal
-    from database.models.background_checks import BackgroundCheck, BackgroundCheckResult
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
     
     async with AsyncSessionLocal() as session:
         query = (

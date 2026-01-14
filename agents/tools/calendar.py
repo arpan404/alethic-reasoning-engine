@@ -12,6 +12,7 @@ from sqlalchemy import select, and_
 
 from database.engine import AsyncSessionLocal
 from database.models.calendar import CalendarIntegration, CalendarEvent
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,6 @@ async def create_calendar_event(
         await session.refresh(event)
     
     # Queue the external calendar sync
-    from agents.tools.queue import enqueue_task
     await enqueue_task(
         task_type="sync_calendar_event",
         payload={

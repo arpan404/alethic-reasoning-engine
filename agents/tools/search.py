@@ -15,6 +15,7 @@ from database.models.embeddings import Embedding, EmbeddingEntityType, Embedding
 from database.models.candidates import Candidate
 from database.models.applications import Application
 from database.models.jobs import Job
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +404,6 @@ async def vectorize_candidate(
             }
     
     # Queue vectorization task
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="vectorize_candidate",
         payload={
@@ -432,7 +432,6 @@ async def _get_query_embedding(query: str) -> Optional[List[float]]:
     # Queue embedding generation and wait for result
     # For now, return a placeholder - in production this would
     # call OpenAI/Cohere/etc. embedding API
-    from agents.tools.queue import enqueue_task, get_task_status
     import asyncio
     
     task_result = await enqueue_task(

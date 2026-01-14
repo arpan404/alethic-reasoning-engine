@@ -18,6 +18,8 @@ from database.models.communications import (
     CommunicationHistory,
 )
 from database.models.applications import Application
+from database.models.ai_evaluations import Interview
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,6 @@ async def send_rejection_email(
                 template_subject = template.subject
     
     # Queue the email
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="send_email",
         payload={
@@ -141,7 +142,6 @@ async def send_interview_invitation(
     Returns:
         Dictionary with send status
     """
-    from database.models.ai_evaluations import Interview
     
     async with AsyncSessionLocal() as session:
         # Get application and interview
@@ -183,7 +183,6 @@ async def send_interview_invitation(
         job_title = app.job.title if app.job else "the position"
     
     # Queue the email
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="send_email",
         payload={

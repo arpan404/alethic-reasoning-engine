@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from database.engine import AsyncSessionLocal
 from database.models.applications import Application
 from database.models.files import File
+from agents.tools.queue import enqueue_task, get_task_status
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,6 @@ async def upload_resumes_bulk(
             }
     
     # Queue the bulk processing job
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="bulk_resume_processing",
         payload={
@@ -94,7 +94,6 @@ async def get_bulk_upload_status(upload_task_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary with processing status and progress
     """
-    from agents.tools.queue import get_task_status
     
     status = await get_task_status(upload_task_id)
     
@@ -190,7 +189,6 @@ async def bulk_reject_candidates(
     
     # Queue rejection emails if requested
     if send_emails and rejected:
-        from agents.tools.queue import enqueue_task
         await enqueue_task(
             task_type="bulk_send_emails",
             payload={

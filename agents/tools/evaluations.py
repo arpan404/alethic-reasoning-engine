@@ -19,6 +19,7 @@ from database.models.ai_evaluations import (
     AIScreeningResult,
     AIAssessmentResult,
 )
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,6 @@ async def trigger_pre_evaluation(
             }
     
     # Queue the evaluation task
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="pre_evaluation",
         payload={
@@ -299,7 +299,6 @@ async def trigger_full_evaluation(
             }
     
     # Queue the evaluation task
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="full_evaluation",
         payload={

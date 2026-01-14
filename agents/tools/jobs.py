@@ -7,7 +7,7 @@ including retrieval, listing, and requirement extraction.
 from typing import Any, Dict, List, Optional
 import logging
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
@@ -133,7 +133,6 @@ async def list_jobs(
         
         # Search by title or description
         if search_query:
-            from sqlalchemy import or_
             search_pattern = f"%{search_query}%"
             conditions.append(
                 or_(
@@ -146,7 +145,6 @@ async def list_jobs(
             query = query.where(and_(*conditions))
         
         # Get total count
-        from sqlalchemy import func
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total_count = total_result.scalar()

@@ -8,13 +8,14 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import logging
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
 from database.models.candidates import Candidate, CandidateStatus
 from database.models.applications import Application
 from database.models.files import File
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,6 @@ async def list_candidates(
             query = query.where(and_(*conditions))
         
         # Get total count
-        from sqlalchemy import func
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total_count = total_result.scalar()
@@ -360,7 +360,6 @@ async def reject_candidate(
         # Queue rejection email if requested
         email_queued = False
         if send_email and candidate_email:
-            from agents.tools.queue import enqueue_task
             await enqueue_task(
                 task_type="send_rejection_email",
                 payload={

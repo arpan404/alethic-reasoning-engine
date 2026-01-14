@@ -20,6 +20,7 @@ from database.models.ai_evaluations import (
     InterviewFeedback,
 )
 from database.models.applications import Application
+from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,6 @@ async def schedule_interview(
         )
         
         # Queue calendar event creation and invites
-        from agents.tools.queue import enqueue_task
         await enqueue_task(
             task_type="create_interview_calendar_event",
             payload={
@@ -356,7 +356,6 @@ async def generate_interview_questions(
             }
     
     # Queue the question generation task
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="generate_interview_questions",
         payload={

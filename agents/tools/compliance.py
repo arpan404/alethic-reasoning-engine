@@ -9,6 +9,14 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from database.engine import AsyncSessionLocal
+from database.models.applications import Application
+from database.models.candidates import Candidate
+from agents.tools.queue import enqueue_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,11 +51,6 @@ async def generate_adverse_action_notice(
             "error": f"Invalid notice type '{notice_type}'. Valid types: {valid_types}",
         }
     
-    from database.engine import AsyncSessionLocal
-    from database.models.applications import Application
-    from database.models.candidates import Candidate
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
     
     async with AsyncSessionLocal() as session:
         query = (
@@ -77,7 +80,6 @@ async def generate_adverse_action_notice(
         job_title = job.title if job else "the position"
     
     # Queue the notice generation
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="generate_adverse_action_notice",
         payload={
@@ -153,7 +155,6 @@ async def verify_work_authorization(
         }
     
     # Queue the verification
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="verify_work_authorization",
         payload={
@@ -210,7 +211,6 @@ async def generate_eeo_report(
         }
     
     # Queue the report generation
-    from agents.tools.queue import enqueue_task
     task_result = await enqueue_task(
         task_type="generate_eeo_report",
         payload={
