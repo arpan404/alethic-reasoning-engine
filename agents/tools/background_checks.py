@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
 from database.models.background_checks import BackgroundCheck, BackgroundCheckResult
+from database.models.applications import Application
 from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,6 @@ BACKGROUND_CHECK_TYPES = [
 
 
 async def initiate_background_check(
-    candidate_id: int,
     application_id: int,
     check_types: List[str],
     provider: str = "default",
@@ -42,11 +42,11 @@ async def initiate_background_check(
 ) -> Dict[str, Any]:
     """Initiate a background check request with external provider.
     
+    Multi-tenant safe: Operates through application context.
     This queues a request to the background check API service.
     
     Args:
-        candidate_id: The candidate to run check on
-        application_id: The related application
+        application_id: The application (provides org scoping)
         check_types: Types of checks to run (criminal, employment, education, etc.)
         provider: Background check provider (checkr, sterling, etc.)
         priority: Processing priority
@@ -69,6 +69,20 @@ async def initiate_background_check(
             "error": "At least one check type is required",
         }
     
+    # Get candidate_id from application
+    async with AsyncSessionLocal() as session:
+        query = select(Application).where(Application.id == application_id)
+        result = await session.execute(query)
+        app = result.scalar_one_or_none()
+        
+        if not app:
+            return {
+                "success": False,
+                "error": f"Application {application_id} not found",
+            }
+        
+        candidate_id = app.candidate_id
+    
     # Generate request ID
     request_id = f"bgc_{uuid.uuid4().hex[:12]}"
     
@@ -77,8 +91,8 @@ async def initiate_background_check(
         task_type="initiate_background_check",
         payload={
             "request_id": request_id,
-            "candidate_id": candidate_id,
             "application_id": application_id,
+            "candidate_id": candidate_id,
             "check_types": check_types,
             "provider": provider,
             "initiated_by": initiated_by,
@@ -87,14 +101,13 @@ async def initiate_background_check(
     )
     
     logger.info(
-        f"Initiated background check {request_id} for candidate {candidate_id}: "
+        f"Initiated background check {request_id} for application {application_id}: "
         f"{check_types}"
     )
     
     return {
         "success": True,
         "request_id": request_id,
-        "candidate_id": candidate_id,
         "application_id": application_id,
         "check_types": check_types,
         "provider": provider,

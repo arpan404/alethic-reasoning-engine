@@ -148,20 +148,23 @@ async def search_candidates_semantic(
 
 
 async def find_similar_candidates(
-    reference_candidate_id: int,
-    job_id: Optional[int] = None,
+    reference_application_id: int,
+    job_id: int,
     limit: int = 10,
     min_similarity: float = 0.6,
 ) -> Dict[str, Any]:
-    """Find candidates similar to a reference candidate.
+    """Find candidates similar to a reference candidate within a job's applicant pool.
+    
+    Multi-tenant safe: Requires job_id and only returns candidates who
+    have applied to jobs in the same organization.
     
     Useful for:
     - Finding more candidates like a good hire
     - Exploring similar profiles in the talent pool
     
     Args:
-        reference_candidate_id: The candidate to find similar profiles to
-        job_id: Optional filter to specific job
+        reference_application_id: The application of the reference candidate
+        job_id: The job to search within (ensures org scoping)
         limit: Maximum number of results
         min_similarity: Minimum similarity threshold
         
@@ -169,6 +172,19 @@ async def find_similar_candidates(
         Dictionary with similar candidates
     """
     async with AsyncSessionLocal() as session:
+        # Get reference application to get candidate_id
+        ref_app_query = select(Application).where(Application.id == reference_application_id)
+        ref_app_result = await session.execute(ref_app_query)
+        ref_app = ref_app_result.scalar_one_or_none()
+        
+        if not ref_app:
+            return {
+                "success": False,
+                "error": f"Application {reference_application_id} not found",
+            }
+        
+        reference_candidate_id = ref_app.candidate_id
+        
         # Get reference candidate's embedding
         ref_embedding_query = select(Embedding).where(
             Embedding.entity_type == EmbeddingEntityType.CANDIDATE,
@@ -181,18 +197,22 @@ async def find_similar_candidates(
         if not ref_embedding:
             return {
                 "success": False,
-                "error": f"No embedding found for candidate {reference_candidate_id}",
+                "error": f"No embedding found for candidate",
             }
         
-        # Find similar candidates
+        # Find similar candidates - ONLY those who applied to this job (org-scoped)
         similarity_sql = text("""
             SELECT 
                 e.entity_id as candidate_id,
+                a.id as application_id,
                 1 - (e.embedding_vector <=> :ref_vector) as similarity
             FROM embeddings e
+            JOIN applications a ON a.candidate_id = e.entity_id
             WHERE e.entity_type = 'candidate'
             AND e.entity_id != :ref_id
             AND e.chunk_index = 0
+            AND a.job_id = :job_id
+            AND a.status != 'rejected'
             AND 1 - (e.embedding_vector <=> :ref_vector) >= :min_similarity
             ORDER BY similarity DESC
             LIMIT :limit
@@ -203,6 +223,7 @@ async def find_similar_candidates(
             {
                 "ref_vector": str(ref_embedding.embedding_vector),
                 "ref_id": reference_candidate_id,
+                "job_id": job_id,
                 "min_similarity": min_similarity,
                 "limit": limit * 2,
             }
@@ -212,13 +233,14 @@ async def find_similar_candidates(
         if not similar_results:
             return {
                 "success": True,
-                "reference_candidate_id": reference_candidate_id,
+                "reference_application_id": reference_application_id,
+                "job_id": job_id,
                 "similar_candidates": [],
                 "total": 0,
             }
         
         candidate_ids = [r[0] for r in similar_results]
-        similarity_map = {r[0]: float(r[1]) for r in similar_results}
+        similarity_map = {r[0]: (r[1], float(r[2])) for r in similar_results}  # candidate_id -> (app_id, similarity)
         
         # Get candidate details
         query = select(Candidate).where(Candidate.id.in_(candidate_ids))
@@ -227,8 +249,9 @@ async def find_similar_candidates(
         
         similar = []
         for candidate in candidates:
-            similarity = similarity_map.get(candidate.id, 0)
+            app_id, similarity = similarity_map.get(candidate.id, (None, 0))
             similar.append({
+                "application_id": app_id,
                 "candidate_id": candidate.id,
                 "name": f"{candidate.first_name} {candidate.last_name}".strip(),
                 "headline": candidate.headline,
@@ -243,7 +266,8 @@ async def find_similar_candidates(
         
         return {
             "success": True,
-            "reference_candidate_id": reference_candidate_id,
+            "reference_application_id": reference_application_id,
+            "job_id": job_id,
             "similar_candidates": similar,
             "total": len(similar),
         }
@@ -373,40 +397,55 @@ async def match_candidates_to_job(
         }
 
 
-async def vectorize_candidate(
-    candidate_id: int,
+async def vectorize_application(
+    application_id: int,
     include_resume: bool = True,
     include_experience: bool = True,
 ) -> Dict[str, Any]:
-    """Vectorize/re-vectorize a candidate's profile and documents.
+    """Vectorize/re-vectorize a candidate's profile and documents via their application.
+    
+    Multi-tenant safe: Operates through application context.
     
     Queues the embedding generation for a candidate's profile,
     resume, and experience data.
     
     Args:
-        candidate_id: The candidate to vectorize
+        application_id: The application to vectorize candidate for
         include_resume: Whether to vectorize resume content
         include_experience: Whether to include work experience
         
     Returns:
         Dictionary with task status
     """
-    # Verify candidate exists
+    # Verify application exists
     async with AsyncSessionLocal() as session:
-        query = select(Candidate).where(Candidate.id == candidate_id)
+        query = (
+            select(Application)
+            .options(selectinload(Application.candidate))
+            .where(Application.id == application_id)
+        )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
-        if not candidate:
+        if not app:
             return {
                 "success": False,
-                "error": f"Candidate {candidate_id} not found",
+                "error": f"Application {application_id} not found",
             }
+        
+        if not app.candidate:
+            return {
+                "success": False,
+                "error": "Candidate not found for application",
+            }
+        
+        candidate_id = app.candidate_id
     
     # Queue vectorization task
     task_result = await enqueue_task(
         task_type="vectorize_candidate",
         payload={
+            "application_id": application_id,
             "candidate_id": candidate_id,
             "include_resume": include_resume,
             "include_experience": include_experience,
@@ -414,10 +453,11 @@ async def vectorize_candidate(
         priority="normal",
     )
     
-    logger.info(f"Queued vectorization for candidate {candidate_id}")
+    logger.info(f"Queued vectorization for application {application_id}")
     
     return {
         "success": True,
+        "application_id": application_id,
         "candidate_id": candidate_id,
         "task_id": task_result.get("task_id"),
         "message": "Candidate vectorization queued",

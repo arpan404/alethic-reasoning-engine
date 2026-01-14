@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_adverse_action_notice(
-    candidate_id: int,
     application_id: int,
     notice_type: str,
     background_check_id: Optional[str] = None,
@@ -30,11 +29,12 @@ async def generate_adverse_action_notice(
 ) -> Dict[str, Any]:
     """Generate FCRA-compliant adverse action notice.
     
+    Multi-tenant safe: Operates through application context.
+    
     This creates legally-required notices when taking adverse action
     based on background check results or credit reports.
     
     Args:
-        candidate_id: The candidate ID
         application_id: The application ID
         notice_type: Type of notice (pre_adverse, adverse)
         background_check_id: Related background check ID
@@ -83,8 +83,8 @@ async def generate_adverse_action_notice(
     task_result = await enqueue_task(
         task_type="generate_adverse_action_notice",
         payload={
-            "candidate_id": candidate_id,
             "application_id": application_id,
+            "candidate_id": candidate.id,
             "notice_type": notice_type,
             "background_check_id": background_check_id,
             "reasons": reasons or [],
@@ -118,7 +118,7 @@ async def generate_adverse_action_notice(
 
 
 async def verify_work_authorization(
-    candidate_id: int,
+    application_id: int,
     document_type: str,
     document_number: str,
     expiration_date: Optional[datetime] = None,
@@ -126,10 +126,11 @@ async def verify_work_authorization(
 ) -> Dict[str, Any]:
     """Verify I-9 work authorization status.
     
+    Multi-tenant safe: Operates through application context.
     Initiates verification with E-Verify or similar system.
     
     Args:
-        candidate_id: The candidate ID
+        application_id: The application ID
         document_type: Type of document (passport, visa, green_card, etc.)
         document_number: Document number
         expiration_date: Document expiration date if applicable
@@ -154,10 +155,25 @@ async def verify_work_authorization(
             "error": f"Invalid document type. Valid types: {valid_documents}",
         }
     
+    # Get candidate_id from application
+    async with AsyncSessionLocal() as session:
+        query = select(Application).where(Application.id == application_id)
+        result = await session.execute(query)
+        app = result.scalar_one_or_none()
+        
+        if not app:
+            return {
+                "success": False,
+                "error": f"Application {application_id} not found",
+            }
+        
+        candidate_id = app.candidate_id
+    
     # Queue the verification
     task_result = await enqueue_task(
         task_type="verify_work_authorization",
         payload={
+            "application_id": application_id,
             "candidate_id": candidate_id,
             "document_type": document_type,
             "document_number": document_number,
@@ -168,12 +184,12 @@ async def verify_work_authorization(
     )
     
     logger.info(
-        f"Initiated work authorization verification for candidate {candidate_id}"
+        f"Initiated work authorization verification for application {application_id}"
     )
     
     return {
         "success": True,
-        "candidate_id": candidate_id,
+        "application_id": application_id,
         "document_type": document_type,
         "task_id": task_result.get("task_id"),
         "status": "verification_initiated",

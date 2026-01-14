@@ -4,12 +4,15 @@ Action-oriented tools for Alethic LLM agents.
 These tools provide database operations and external system interactions
 that LLMs cannot perform natively. They are designed to be used by the
 chat-first AI hiring copilot to perform actions on behalf of users.
+
+IMPORTANT: All tools use application_id for multi-tenant data isolation.
+Candidates can apply across organizations, so data access is always
+scoped through Application → Job → Organization.
 """
 
 from agents.tools.candidates import (
-    get_candidate,
-    list_candidates,
-    update_candidate_status,
+    get_candidate_for_application,
+    list_candidates_for_job,
     shortlist_candidate,
     reject_candidate,
     get_application_documents,
@@ -84,14 +87,13 @@ from agents.tools.search import (
     search_candidates_semantic,
     find_similar_candidates,
     match_candidates_to_job,
-    vectorize_candidate,
+    vectorize_application,
 )
 
 __all__ = [
-    # Candidates
-    "get_candidate",
-    "list_candidates",
-    "update_candidate_status",
+    # Candidates (all use application_id for multi-tenant safety)
+    "get_candidate_for_application",
+    "list_candidates_for_job",
     "shortlist_candidate",
     "reject_candidate",
     "get_application_documents",
@@ -153,5 +155,5 @@ __all__ = [
     "search_candidates_semantic",
     "find_similar_candidates",
     "match_candidates_to_job",
-    "vectorize_candidate",
+    "vectorize_application",
 ]

@@ -2,6 +2,9 @@
 
 These tools provide database operations for managing candidates,
 including retrieval, status updates, and actions like shortlisting/rejection.
+
+IMPORTANT: All tools are scoped through Application for multi-tenant isolation.
+Candidates can apply across organizations, so we always access via Application → Job → Org.
 """
 
 from typing import Any, Dict, List, Optional
@@ -14,45 +17,55 @@ from sqlalchemy.orm import selectinload
 from database.engine import AsyncSessionLocal
 from database.models.candidates import Candidate, CandidateStatus
 from database.models.applications import Application
+from database.models.jobs import Job
 from database.models.files import File
 from agents.tools.queue import enqueue_task
 
 logger = logging.getLogger(__name__)
 
 
-async def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
-    """Get detailed information about a candidate.
+async def get_candidate_for_application(application_id: int) -> Optional[Dict[str, Any]]:
+    """Get detailed information about a candidate via their application.
+    
+    This ensures proper multi-tenant isolation by accessing the candidate
+    through the Application model, which is tied to a specific Job/Organization.
     
     Args:
-        candidate_id: The unique identifier of the candidate
+        application_id: The application ID
         
     Returns:
         Dictionary containing candidate details, or None if not found
     """
     async with AsyncSessionLocal() as session:
         query = (
-            select(Candidate)
+            select(Application)
             .options(
-                selectinload(Candidate.education),
-                selectinload(Candidate.experience),
-                selectinload(Candidate.applications),
+                selectinload(Application.candidate).selectinload(Candidate.education),
+                selectinload(Application.candidate).selectinload(Candidate.experience),
+                selectinload(Application.job),
             )
-            .where(Candidate.id == candidate_id)
+            .where(Application.id == application_id)
         )
         result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
+        app = result.scalar_one_or_none()
         
+        if not app:
+            return None
+        
+        candidate = app.candidate
         if not candidate:
             return None
         
         return {
-            "id": candidate.id,
+            "application_id": application_id,
+            "job_id": app.job_id,
+            "job_title": app.job.title if app.job else None,
+            "candidate_id": candidate.id,
             "name": f"{candidate.first_name} {candidate.last_name}".strip(),
             "first_name": candidate.first_name,
             "last_name": candidate.last_name,
             "email": candidate.email,
             "phone": candidate.phone,
-            "status": candidate.status,
             "location": candidate.location,
             "headline": candidate.headline,
             "summary": candidate.summary,
@@ -93,27 +106,34 @@ async def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
                 }
                 for exp in (candidate.experience or [])
             ],
-            "application_count": len(candidate.applications or []),
+            # Application-specific data
+            "application_status": app.status,
+            "current_stage": app.current_stage,
+            "ai_recommendation": app.ai_recommendation,
+            "ai_overall_score": app.ai_overall_score,
         }
 
 
-async def list_candidates(
-    job_id: Optional[int] = None,
+async def list_candidates_for_job(
+    job_id: int,
+    stage: Optional[str] = None,
     status: Optional[str] = None,
     search_query: Optional[str] = None,
-    skills: Optional[List[str]] = None,
     min_experience: Optional[int] = None,
     max_experience: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """List candidates with optional filtering.
+    """List candidates who applied to a specific job.
+    
+    Multi-tenant safe: job_id ensures we only see candidates
+    for jobs within the caller's organization.
     
     Args:
-        job_id: Filter by candidates who applied to this job
-        status: Filter by candidate status (active, inactive, etc.)
+        job_id: The job to list candidates for (required for org scoping)
+        stage: Filter by application stage
+        status: Filter by application status
         search_query: Search by name or email
-        skills: Filter by required skills
         min_experience: Minimum years of experience
         max_experience: Maximum years of experience
         limit: Maximum number of results
@@ -123,33 +143,41 @@ async def list_candidates(
         Dictionary with candidates list and pagination info
     """
     async with AsyncSessionLocal() as session:
-        query = select(Candidate)
+        query = (
+            select(Application)
+            .options(selectinload(Application.candidate))
+            .where(Application.job_id == job_id)
+        )
         conditions = []
         
-        # Filter by job (via applications)
-        if job_id:
-            query = query.join(Application).where(Application.job_id == job_id)
+        if stage:
+            conditions.append(Application.current_stage == stage)
         
-        # Filter by status
         if status:
-            conditions.append(Candidate.status == status)
+            conditions.append(Application.status == status)
         
-        # Search by name or email
         if search_query:
+            # Need subquery for candidate search
             search_pattern = f"%{search_query}%"
-            conditions.append(
-                or_(
-                    Candidate.first_name.ilike(search_pattern),
-                    Candidate.last_name.ilike(search_pattern),
-                    Candidate.email.ilike(search_pattern),
+            subq = (
+                select(Candidate.id)
+                .where(
+                    or_(
+                        Candidate.first_name.ilike(search_pattern),
+                        Candidate.last_name.ilike(search_pattern),
+                        Candidate.email.ilike(search_pattern),
+                    )
                 )
             )
+            conditions.append(Application.candidate_id.in_(subq))
         
-        # Filter by experience
         if min_experience is not None:
-            conditions.append(Candidate.years_of_experience >= min_experience)
+            subq = select(Candidate.id).where(Candidate.years_of_experience >= min_experience)
+            conditions.append(Application.candidate_id.in_(subq))
+        
         if max_experience is not None:
-            conditions.append(Candidate.years_of_experience <= max_experience)
+            subq = select(Candidate.id).where(Candidate.years_of_experience <= max_experience)
+            conditions.append(Application.candidate_id.in_(subq))
         
         if conditions:
             query = query.where(and_(*conditions))
@@ -160,87 +188,38 @@ async def list_candidates(
         total_count = total_result.scalar()
         
         # Apply pagination
-        query = query.offset(offset).limit(limit)
+        query = query.order_by(Application.created_at.desc()).offset(offset).limit(limit)
         
         result = await session.execute(query)
-        candidates = result.scalars().all()
+        applications = result.scalars().all()
         
         return {
+            "job_id": job_id,
             "candidates": [
                 {
-                    "id": c.id,
-                    "name": f"{c.first_name} {c.last_name}".strip(),
-                    "email": c.email,
-                    "status": c.status,
-                    "headline": c.headline,
-                    "experience_level": c.experience_level,
-                    "years_of_experience": c.years_of_experience,
-                    "skills": (c.skills or [])[:10],  # First 10 skills
-                    "location": c.location,
+                    "application_id": a.id,
+                    "candidate_id": a.candidate_id,
+                    "name": f"{a.candidate.first_name} {a.candidate.last_name}".strip() if a.candidate else None,
+                    "email": a.candidate.email if a.candidate else None,
+                    "headline": a.candidate.headline if a.candidate else None,
+                    "experience_level": a.candidate.experience_level if a.candidate else None,
+                    "years_of_experience": a.candidate.years_of_experience if a.candidate else None,
+                    "skills": (a.candidate.skills or [])[:10] if a.candidate else [],
+                    "location": a.candidate.location if a.candidate else None,
+                    # Application data
+                    "current_stage": a.current_stage,
+                    "status": a.status,
+                    "ai_recommendation": a.ai_recommendation,
+                    "ai_overall_score": a.ai_overall_score,
+                    "is_shortlisted": a.is_shortlisted,
+                    "applied_at": a.applied_at.isoformat() if a.applied_at else None,
                 }
-                for c in candidates
+                for a in applications
             ],
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + len(candidates)) < total_count,
-        }
-
-
-async def update_candidate_status(
-    candidate_id: int,
-    status: str,
-    reason: Optional[str] = None,
-    updated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Update a candidate's status.
-    
-    Args:
-        candidate_id: The candidate to update
-        status: New status (active, inactive, blacklisted, verified, pending_verification)
-        reason: Optional reason for the status change
-        updated_by: User ID who is making the update
-        
-    Returns:
-        Dictionary with success status and updated candidate info
-    """
-    valid_statuses = [s.value for s in CandidateStatus]
-    if status not in valid_statuses:
-        return {
-            "success": False,
-            "error": f"Invalid status '{status}'. Valid options: {valid_statuses}",
-        }
-    
-    async with AsyncSessionLocal() as session:
-        query = select(Candidate).where(Candidate.id == candidate_id)
-        result = await session.execute(query)
-        candidate = result.scalar_one_or_none()
-        
-        if not candidate:
-            return {
-                "success": False,
-                "error": f"Candidate with ID {candidate_id} not found",
-            }
-        
-        old_status = candidate.status
-        candidate.status = status
-        candidate.updated_at = datetime.utcnow()
-        if updated_by:
-            candidate.updated_by = updated_by
-        
-        await session.commit()
-        
-        logger.info(
-            f"Updated candidate {candidate_id} status: {old_status} -> {status}"
-            + (f" (reason: {reason})" if reason else "")
-        )
-        
-        return {
-            "success": True,
-            "candidate_id": candidate_id,
-            "old_status": old_status,
-            "new_status": status,
-            "reason": reason,
+            "has_more": (offset + len(applications)) < total_count,
         }
 
 
@@ -456,4 +435,3 @@ async def get_application_documents(application_id: int) -> Dict[str, Any]:
                 documents["other_documents"].append(doc_info)
         
         return documents
-
