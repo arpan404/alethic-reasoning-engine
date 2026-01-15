@@ -1,120 +1,108 @@
 """Candidate management API routes."""
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
 
-from api.dependencies import get_db, require_active_user
-from api.schemas.common import PaginatedResponse, PaginationParams
-from api.schemas.candidates import (
-    CandidateCreate,
-    CandidateUpdate,
-    CandidateResponse,
-)
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body
+from pydantic import BaseModel, Field
+
+from api.dependencies import require_active_user
 from database.models.users import User
-# from core.parsers.resume import parse_resume  # TODO: Implement
-from workers.tasks.embeddings import generate_resume_embedding
-
+from api.services import candidates as candidate_service
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 
-@router.get("", response_model=PaginatedResponse[CandidateResponse])
+class ShortlistRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class RejectRequest(BaseModel):
+    reason: str = Field(..., min_length=5)
+    send_notification: bool = True
+
+
+@router.get("")
 async def list_candidates(
-    pagination: PaginationParams = Depends(),
+    job_id: int = Query(..., description="Job ID to list candidates for"),
+    stage: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="Search by name or email"),
-    db: AsyncSession = Depends(get_db),
+    is_shortlisted: Optional[bool] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_active_user),
 ):
-    """List all candidates with pagination and optional search."""
-    # TODO: Implement listing with filters
-    return PaginatedResponse.create(
-        items=[],
-        total=0,
-        pagination=pagination,
+    """List candidates for a job with filtering."""
+    result = await candidate_service.list_candidates(
+        job_id=job_id,
+        stage=stage,
+        status=status,
+        search_query=search,
+        is_shortlisted=is_shortlisted,
+        limit=limit,
+        offset=offset,
     )
+    return result
 
 
-@router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
-async def create_candidate(
-    candidate: CandidateCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_active_user),
-):
-    """Create a new candidate."""
-    # TODO: Implement candidate creation
-    # TODO: Trigger resume parsing if resume is provided
-    
-    if candidate.resume_url:
-        # Queue resume parsing task
-        parse_resume.delay(
-            file_path=candidate.resume_url,
-            candidate_id="",  # Will be set after creation
-            organization_id=str(current_user.organization_id),
-        )
-    
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
-
-
-@router.get("/{candidate_id}", response_model=CandidateResponse)
+@router.get("/{application_id}")
 async def get_candidate(
-    candidate_id: str,
-    db: AsyncSession = Depends(get_db),
+    application_id: int = Path(..., description="Application ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get candidate by ID."""
-    # TODO: Implement get candidate
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Candidate {candidate_id} not found",
-    )
+    """Get detailed candidate information."""
+    result = await candidate_service.get_candidate(application_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    return result
 
 
-@router.patch("/{candidate_id}", response_model=CandidateResponse)
-async def update_candidate(
-    candidate_id: str,
-    update_data: CandidateUpdate,
-    db: AsyncSession = Depends(get_db),
+@router.post("/{application_id}/shortlist")
+async def shortlist_candidate(
+    application_id: int = Path(...),
+    request: ShortlistRequest = Body(default=ShortlistRequest()),
     current_user: User = Depends(require_active_user),
 ):
-    """Update candidate information."""
-    # TODO: Implement update
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
-
-
-@router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_candidate(
-    candidate_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_active_user),
-):
-    """Delete candidate."""
-    # TODO: Implement soft delete
-    pass
-
-
-@router.post("/{candidate_id}/parse-resume")
-async def trigger_resume_parse(
-    candidate_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_active_user),
-):
-    """Manually trigger resume parsing for a candidate."""
-    # TODO: Fetch candidate and resume file path
-    
-    task = parse_resume.delay(
-        file_path="",  # TODO: Get from database
-        candidate_id=candidate_id,
-        organization_id=str(current_user.organization_id),
+    """Shortlist a candidate."""
+    result = await candidate_service.shortlist_candidate(
+        application_id=application_id,
+        reason=request.reason,
+        shortlisted_by=current_user.id,
     )
     
-    return {
-        "status": "queued",
-        "task_id": task.id,
-    }
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    return result
+
+
+@router.post("/{application_id}/reject")
+async def reject_candidate(
+    application_id: int = Path(...),
+    request: RejectRequest = Body(...),
+    current_user: User = Depends(require_active_user),
+):
+    """Reject a candidate."""
+    result = await candidate_service.reject_candidate(
+        application_id=application_id,
+        reason=request.reason,
+        send_notification=request.send_notification,
+        rejected_by=current_user.id,
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    return result
+
+
+@router.get("/{application_id}/documents")
+async def get_candidate_documents(
+    application_id: int = Path(...),
+    current_user: User = Depends(require_active_user),
+):
+    """Get all documents for a candidate."""
+    result = await candidate_service.get_candidate_documents(application_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result

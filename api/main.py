@@ -11,15 +11,25 @@ from core.config import settings
 from database.engine import init_db, close_db
 from api.routes import health
 from api.routes.v1 import (
-    applications,
+    agents as agents_routes,
+    actions,
+    compliance,
+    auth,
+    beta,
     candidates,
+    applications,
     jobs,
+    interviews,
+    evaluations,
+    documents,
+    search,
+    comparison,
+    calendar,
+    bulk,
+    background_checks,
     offers,
     users,
     webhooks,
-    agents as agents_routes,
-    auth,
-    beta,
 )
 
 # Import middleware components
@@ -47,16 +57,21 @@ setup_logging(
 async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     import logging
+    from core.cache import redis_cache
+    
     logger = logging.getLogger(__name__)
     
     # Startup
     logger.info(f"Starting {settings.app_name} in {settings.app_env} environment")
     await init_db()
+    await redis_cache.init()
     
     yield
     
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
+    
+    await redis_cache.close()
     
     # Close rate limiter Redis connection if enabled
     if settings.rate_limit_enabled:
@@ -71,13 +86,54 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-# Create FastAPI app
+# Create FastAPI app with comprehensive API documentation
+API_DESCRIPTION = """
+# Alethic API
+
+The **AI Hiring Copilot** API for intelligent recruitment automation.
+
+## Features
+
+- 🤖 **AI Chat Copilot** - Natural language interface for hiring tasks
+- 📄 **Resume Parsing** - Automatic extraction and analysis
+- 🎯 **Smart Matching** - AI-powered candidate ranking
+- 📊 **Evaluations** - Pre and full candidate evaluations
+- 🔒 **GDPR Compliant** - Built-in privacy controls
+
+## Documentation
+
+- [API Overview](/docs/api/overview.md)
+- [Authentication Guide](/docs/api/authentication.md)
+- [Endpoint Reference](/api-reference)
+
+## Security
+
+All endpoints are protected by JWT authentication and rate limiting.
+PII access is logged for GDPR/SOC2 compliance.
+"""
+
 app = FastAPI(
-    title=settings.app_name,
-    description="ATS with AI-powered agents using Google ADK",
-    version="0.1.0",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    title="Alethic API",
+    description=API_DESCRIPTION,
+    version="1.0.0",
+    docs_url="/api-reference",
+    redoc_url="/api-reference/redoc",
+    openapi_url="/api-reference/openapi.json",
+    openapi_tags=[
+        {"name": "Agents", "description": "AI Copilot chat and actions"},
+        {"name": "Candidates", "description": "Candidate management (PII)"},
+        {"name": "Applications", "description": "Application workflow"},
+        {"name": "Jobs", "description": "Job postings"},
+        {"name": "Interviews", "description": "Interview scheduling"},
+        {"name": "Evaluations", "description": "AI evaluations and rankings"},
+        {"name": "Documents", "description": "Resume and document access (PII)"},
+        {"name": "Search", "description": "Semantic candidate search"},
+        {"name": "Bulk Operations", "description": "Bulk actions"},
+        {"name": "Background Checks", "description": "Background verification"},
+        {"name": "Compliance", "description": "GDPR and legal compliance"},
+        {"name": "Calendar", "description": "Scheduling and availability"},
+        {"name": "Comparison", "description": "Candidate comparison"},
+    ],
     lifespan=lifespan,
 )
 
@@ -202,49 +258,139 @@ app.add_middleware(
 # Health check routes
 app.include_router(health.router, tags=["Health"])
 
-# API v1 routes
+# =============================================================================
+# API v1 Routes - Chat-First Hybrid Model
+# =============================================================================
+
+# Authentication
 app.include_router(
     auth.router,
     tags=["Authentication"],
 )
-app.include_router(
-    applications.router,
-    prefix=f"{settings.api_v1_prefix}/applications",
-    tags=["Applications"],
-)
-app.include_router(
-    candidates.router,
-    prefix=f"{settings.api_v1_prefix}/candidates",
-    tags=["Candidates"],
-)
-app.include_router(
-    jobs.router,
-    prefix=f"{settings.api_v1_prefix}/jobs",
-    tags=["Jobs"],
-)
-app.include_router(
-    offers.router,
-    prefix=f"{settings.api_v1_prefix}/offers",
-    tags=["Offers"],
-)
-app.include_router(
-    users.router,
-    prefix=f"{settings.api_v1_prefix}/users",
-    tags=["Users"],
-)
-app.include_router(
-    webhooks.router,
-    prefix=f"{settings.api_v1_prefix}/webhooks",
-    tags=["Webhooks"],
-)
+
+# Primary Chat Interface (AI Copilot)
 app.include_router(
     agents_routes.router,
-    prefix=f"{settings.api_v1_prefix}/agents",
-    tags=["Agents"],
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["AI Copilot"],
 )
+
+# Action Endpoints (UI buttons/menus)
+app.include_router(
+    actions.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Actions"],
+)
+
+# Compliance (GDPR, legal - always required)
+app.include_router(
+    compliance.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Compliance"],
+)
+
+# Beta features
 app.include_router(
     beta.router,
     tags=["Beta"],
+)
+
+# Candidates
+app.include_router(
+    candidates.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Candidates"],
+)
+
+# Applications
+app.include_router(
+    applications.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Applications"],
+)
+
+# Jobs
+app.include_router(
+    jobs.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Jobs"],
+)
+
+# Interviews
+app.include_router(
+    interviews.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Interviews"],
+)
+
+# Evaluations
+app.include_router(
+    evaluations.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Evaluations"],
+)
+
+# Documents
+app.include_router(
+    documents.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Documents"],
+)
+
+# Search
+app.include_router(
+    search.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Search"],
+)
+
+# Comparison
+app.include_router(
+    comparison.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Comparison"],
+)
+
+# Calendar
+app.include_router(
+    calendar.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Calendar"],
+)
+
+# Bulk Operations
+app.include_router(
+    bulk.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Bulk Operations"],
+)
+
+# Background Checks
+app.include_router(
+    background_checks.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Background Checks"],
+)
+
+# Offers
+app.include_router(
+    offers.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Offers"],
+)
+
+# Users
+app.include_router(
+    users.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Users"],
+)
+
+# Webhooks
+app.include_router(
+    webhooks.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Webhooks"],
 )
 
 
@@ -260,16 +406,28 @@ async def global_exception_handler(request, exc):
         f"Unhandled exception in global handler: {type(exc).__name__}",
         exc_info=True,
     )
+    
+    if settings.debug:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": str(exc),
+                "type": type(exc).__name__,
+            },
+        )
     return JSONResponse(
         status_code=500,
-        content={
-            "error": {
-                "code": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected error occurred",
-                "type": type(exc).__name__,
-            }
-        },
+        content={"detail": "Internal server error"},
     )
+
+
+# Root redirect
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root to API reference."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api-reference")
+
 
 
 if __name__ == "__main__":
@@ -282,3 +440,4 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level=settings.log_level.lower(),
     )
+
