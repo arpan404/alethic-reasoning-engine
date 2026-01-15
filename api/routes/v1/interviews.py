@@ -1,6 +1,10 @@
-"""Interview management API routes."""
+"""
+Interview scheduling and management endpoints.
 
-from typing import List, Optional
+Provides REST API for scheduling, listing, rescheduling, and cancelling interviews.
+"""
+
+from typing import Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, Path
@@ -8,38 +12,45 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import interviews as interview_service
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
 
 class InterviewScheduleRequest(BaseModel):
-    application_id: int
-    interview_type: str = Field(..., description="Type of interview (e.g. 'phone', 'technical')")
-    scheduled_at: datetime = Field(..., description="ISO formatted date time")
-    duration_minutes: int = Field(60, ge=15, le=480)
-    interviewer_ids: List[int] = Field(default=[], description="List of interviewer User IDs")
-    location: Optional[str] = None
-    notes: Optional[str] = None
+    """Request model for scheduling an interview."""
+    application_id: int = Field(..., description="Application to schedule interview for")
+    interview_type: str = Field(..., description="Type: phone, technical, onsite, panel")
+    scheduled_at: datetime = Field(..., description="Interview date and time (ISO 8601)")
+    duration_minutes: int = Field(60, ge=15, le=480, description="Duration in minutes")
+    interviewer_ids: list[int] = Field(default=[], description="Interviewer user IDs")
+    location: Optional[str] = Field(None, description="Interview location or meeting link")
+    notes: Optional[str] = Field(None, description="Private notes for interviewers")
 
 
 class RescheduleRequest(BaseModel):
-    new_datetime: datetime
-    reason: Optional[str] = None
+    """Request model for rescheduling an interview."""
+    new_datetime: datetime = Field(..., description="New interview date and time")
+    reason: Optional[str] = Field(None, description="Reason for rescheduling")
 
 
 class CancelRequest(BaseModel):
-    reason: Optional[str] = None
+    """Request model for cancelling an interview."""
+    reason: Optional[str] = Field(None, description="Reason for cancellation")
 
 
-@router.post("/schedule")
+@router.post(
+    "/schedule",
+    summary="Schedule Interview",
+    description="Schedule a new interview for an application. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def schedule_interview(
     request: InterviewScheduleRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Schedule an interview for an application.
-    """
+    """Schedule a new interview for a candidate application."""
     interviewer_ids = request.interviewer_ids or [current_user.id]
     
     result = await interview_service.schedule_interview(
@@ -55,25 +66,28 @@ async def schedule_interview(
     
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed to schedule interview"))
-        
+    
     return result
 
 
-@router.get("")
+@router.get(
+    "",
+    summary="List Interviews",
+    description="List interviews with optional filtering. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def list_interviews(
-    application_id: Optional[int] = Query(None),
-    job_id: Optional[int] = Query(None),
-    status: Optional[str] = Query(None),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
+    application_id: Optional[int] = Query(None, description="Filter by application"),
+    job_id: Optional[int] = Query(None, description="Filter by job"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    start_date: Optional[datetime] = Query(None, description="Filter from date"),
+    end_date: Optional[datetime] = Query(None, description="Filter to date"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    List interviews with filtering.
-    """
-    result = await interview_service.list_interviews(
+    """Retrieve a paginated list of interviews with optional filters."""
+    return await interview_service.list_interviews(
         application_id=application_id,
         job_id=job_id,
         status=status,
@@ -82,29 +96,37 @@ async def list_interviews(
         limit=limit,
         offset=offset,
     )
-    
-    return result
 
 
-@router.get("/{interview_id}")
+@router.get(
+    "/{interview_id}",
+    summary="Get Interview Details",
+    description="Get details of a specific interview. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_interview(
-    interview_id: int = Path(...),
+    interview_id: int = Path(..., description="Interview ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get interview details."""
+    """Retrieve detailed information about an interview."""
     result = await interview_service.get_interview(interview_id)
     if not result:
         raise HTTPException(status_code=404, detail="Interview not found")
     return result
 
 
-@router.post("/{interview_id}/reschedule")
+@router.post(
+    "/{interview_id}/reschedule",
+    summary="Reschedule Interview",
+    description="Reschedule an existing interview. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def reschedule_interview(
-    interview_id: int = Path(...),
+    interview_id: int = Path(..., description="Interview ID"),
     request: RescheduleRequest = Body(...),
     current_user: User = Depends(require_active_user),
 ):
-    """Reschedule an interview."""
+    """Reschedule an interview to a new date and time."""
     result = await interview_service.reschedule_interview(
         interview_id=interview_id,
         new_datetime=request.new_datetime,
@@ -118,13 +140,18 @@ async def reschedule_interview(
     return result
 
 
-@router.post("/{interview_id}/cancel")
+@router.post(
+    "/{interview_id}/cancel",
+    summary="Cancel Interview",
+    description="Cancel a scheduled interview. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def cancel_interview(
-    interview_id: int = Path(...),
+    interview_id: int = Path(..., description="Interview ID"),
     request: CancelRequest = Body(default=CancelRequest()),
     current_user: User = Depends(require_active_user),
 ):
-    """Cancel an interview."""
+    """Cancel a scheduled interview."""
     result = await interview_service.cancel_interview(
         interview_id=interview_id,
         reason=request.reason,

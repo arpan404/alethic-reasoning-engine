@@ -1,49 +1,58 @@
-"""Compliance API routes (GDPR, FCRA, EEO)."""
+"""
+Compliance and data privacy endpoints.
+
+Provides REST API for GDPR, FCRA, and EEO compliance requirements.
+"""
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
 from pydantic import BaseModel, Field
 
-from api.dependencies import require_active_user
+from api.dependencies import require_active_user, require_admin_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import compliance as compliance_service
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
 
 
 class AdverseActionRequest(BaseModel):
-    application_id: int
-    reason: str = Field(..., min_length=10)
-    notice_type: str = Field(default="pre", pattern="^(pre|final)$")
+    """Request model for adverse action notice."""
+    application_id: int = Field(..., description="Application ID")
+    reason: str = Field(..., min_length=10, description="Detailed reason for adverse action")
+    notice_type: str = Field("pre", description="Notice type: 'pre' or 'final'")
 
 
 class WorkAuthorizationRequest(BaseModel):
-    application_id: int
-    document_type: str = Field(..., description="Document type (e.g., passport, visa)")
-    document_number: Optional[str] = None
-    expiry_date: Optional[str] = Field(None, description="Expiry date in YYYY-MM-DD format")
+    """Request model for work authorization verification."""
+    application_id: int = Field(..., description="Application ID")
+    document_type: str = Field(..., description="Document type: passport, visa, work_permit, etc.")
+    document_number: Optional[str] = Field(None, description="Document identification number")
+    expiry_date: Optional[str] = Field(None, description="Document expiry date (YYYY-MM-DD)")
 
 
 class EEOReportRequest(BaseModel):
-    start_date: str = Field(..., description="Start date in YYYY-MM-DD format")
-    end_date: str = Field(..., description="End date in YYYY-MM-DD format")
-    job_id: Optional[int] = None
+    """Request model for EEO report generation."""
+    start_date: str = Field(..., description="Report start date (YYYY-MM-DD)")
+    end_date: str = Field(..., description="Report end date (YYYY-MM-DD)")
+    job_id: Optional[int] = Field(None, description="Limit to specific job")
 
 
-# FCRA Compliance Endpoints
-
-@router.post("/adverse-action")
+@router.post(
+    "/adverse-action",
+    summary="Generate Adverse Action Notice",
+    description="Generate FCRA-compliant adverse action notice. Requires application:reject permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_REJECT))],
+)
 async def generate_adverse_action_notice(
     request: AdverseActionRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Generate FCRA-compliant adverse action notice.
+    """Generate pre- or final adverse action notice with required consumer rights information."""
+    if request.notice_type not in ["pre", "final"]:
+        raise HTTPException(status_code=400, detail="Notice type must be 'pre' or 'final'")
     
-    Creates either a pre-adverse action notice (5 business days wait)
-    or a final adverse action notice.
-    """
     result = await compliance_service.generate_adverse_action_notice(
         application_id=request.application_id,
         reason=request.reason,
@@ -57,16 +66,17 @@ async def generate_adverse_action_notice(
     return result
 
 
-@router.post("/work-authorization")
+@router.post(
+    "/work-authorization",
+    summary="Verify Work Authorization",
+    description="Initiate I-9/E-Verify work authorization check. Requires application:advance permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_ADVANCE))],
+)
 async def verify_work_authorization(
     request: WorkAuthorizationRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Verify I-9 work authorization for a candidate.
-    
-    Initiates verification process with E-Verify if applicable.
-    """
+    """Submit work authorization documents for I-9 and E-Verify verification."""
     result = await compliance_service.verify_work_authorization(
         application_id=request.application_id,
         document_type=request.document_type,
@@ -81,58 +91,56 @@ async def verify_work_authorization(
     return result
 
 
-# GDPR Data Rights Endpoints
-
-@router.get("/data-export/{user_id}")
+@router.get(
+    "/export/{user_id}",
+    summary="Export User Data (GDPR)",
+    description="Export all data for a user (GDPR Article 15). Requires candidate:export permission.",
+    dependencies=[Depends(require_permission(Permission.CANDIDATE_EXPORT))],
+)
 async def export_user_data(
-    user_id: int = Path(...),
+    user_id: int = Path(..., description="User or candidate ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Export all data for a user (GDPR Article 15 - Right of Access).
-    
-    Returns all personal data stored about the user.
-    """
+    """Export complete user data for GDPR data subject access request."""
     result = await compliance_service.export_user_data(user_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
 
 
-@router.delete("/data-erasure/{user_id}")
+@router.delete(
+    "/erase/{user_id}",
+    summary="Erase User Data (GDPR)",
+    description="Erase all user data (GDPR Article 17). Requires candidate:delete permission.",
+    dependencies=[Depends(require_permission(Permission.CANDIDATE_DELETE))],
+)
 async def erase_user_data(
-    user_id: int = Path(...),
+    user_id: int = Path(..., description="User or candidate ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Erase all user data (GDPR Article 17 - Right to Erasure).
-    
-    This anonymizes the user's data. This action is irreversible.
-    """
+    """Permanently erase user data for GDPR right to be forgotten request."""
     result = await compliance_service.erase_user_data(
         user_id=user_id,
         erased_by=current_user.id,
     )
     
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Failed to erase data"))
+        raise HTTPException(status_code=400, detail=result.get("error"))
     
     return result
 
 
-# EEO Reporting Endpoints
-
-@router.post("/eeo-report")
+@router.post(
+    "/eeo-report",
+    summary="Generate EEO Report",
+    description="Generate EEO-1 compliance report. Requires report:compliance permission.",
+    dependencies=[Depends(require_permission(Permission.REPORT_COMPLIANCE))],
+)
 async def generate_eeo_report(
     request: EEOReportRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Generate EEO (Equal Employment Opportunity) report.
-    
-    Creates a report for the specified date range.
-    Returns a task ID for tracking progress.
-    """
+    """Queue EEO-1 report generation for compliance reporting."""
     result = await compliance_service.generate_eeo_report(
         start_date=request.start_date,
         end_date=request.end_date,

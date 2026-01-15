@@ -1,6 +1,10 @@
-"""Calendar API routes."""
+"""
+Calendar and scheduling endpoints.
 
-from typing import List, Optional
+Provides REST API for checking availability and scheduling events.
+"""
+
+from typing import Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
@@ -8,85 +12,85 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import calendar as calendar_service
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
-class AvailabilityRequest(BaseModel):
-    user_ids: List[int] = Field(..., min_length=1)
-    date: str = Field(..., description="Date in YYYY-MM-DD format")
-
-
-class FindSlotsRequest(BaseModel):
-    user_ids: List[int] = Field(..., min_length=1)
-    date: str = Field(..., description="Date in YYYY-MM-DD format")
-    duration_minutes: int = Field(default=60, ge=15, le=480)
-
-
 class CreateEventRequest(BaseModel):
-    title: str = Field(..., max_length=200)
-    start_time: datetime
-    end_time: datetime
-    attendees: List[str] = Field(default=[], description="Attendee email addresses")
-    location: Optional[str] = None
-    description: Optional[str] = None
-    send_invites: bool = True
+    """Request model for creating a calendar event."""
+    title: str = Field(..., min_length=2, description="Event title")
+    start_time: datetime = Field(..., description="Event start time (ISO 8601)")
+    end_time: datetime = Field(..., description="Event end time (ISO 8601)")
+    attendees: list[str] = Field(default=[], description="Attendee email addresses")
+    location: Optional[str] = Field(None, description="Event location or meeting link")
+    description: Optional[str] = Field(None, description="Event description")
+    send_invites: bool = Field(True, description="Send calendar invites to attendees")
 
 
-@router.post("/availability")
+@router.get(
+    "/availability",
+    summary="Get User Availability",
+    description="Get availability for users on a specific date. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def get_user_availability(
-    request: AvailabilityRequest,
+    user_ids: str = Query(..., description="Comma-separated user IDs"),
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Get availability for specified users on a date.
+    """Get busy and available time slots for specified users on a date."""
+    try:
+        ids = [int(id.strip()) for id in user_ids.split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     
-    Returns busy and available time slots.
-    """
-    result = await calendar_service.get_user_availability(
-        user_ids=request.user_ids,
-        date=request.date,
-    )
-    
+    result = await calendar_service.get_user_availability(user_ids=ids, date=date)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    
     return result
 
 
-@router.post("/find-slots")
+@router.get(
+    "/slots",
+    summary="Find Available Slots",
+    description="Find common available slots for multiple users. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def find_available_slots(
-    request: FindSlotsRequest,
+    user_ids: str = Query(..., description="Comma-separated user IDs"),
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    duration: int = Query(60, ge=15, le=480, description="Required duration in minutes"),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Find common available time slots for multiple users.
+    """Find overlapping available time slots that fit the required duration."""
+    try:
+        ids = [int(id.strip()) for id in user_ids.split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     
-    Returns slots where all users are available for the requested duration.
-    """
     result = await calendar_service.find_available_slots(
-        user_ids=request.user_ids,
-        date=request.date,
-        duration_minutes=request.duration_minutes,
+        user_ids=ids,
+        date=date,
+        duration_minutes=duration,
     )
-    
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    
     return result
 
 
-@router.post("/events")
+@router.post(
+    "/events",
+    summary="Create Calendar Event",
+    description="Create a new calendar event. Requires interview:schedule permission.",
+    dependencies=[Depends(require_permission(Permission.INTERVIEW_SCHEDULE))],
+)
 async def create_calendar_event(
     request: CreateEventRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Create a calendar event.
-    
-    Optionally sends calendar invites to attendees.
-    """
+    """Create a calendar event and optionally send invites to attendees."""
     if request.end_time <= request.start_time:
         raise HTTPException(status_code=400, detail="End time must be after start time")
     

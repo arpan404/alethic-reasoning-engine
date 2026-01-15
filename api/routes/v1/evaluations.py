@@ -1,4 +1,8 @@
-"""AI Evaluation API routes."""
+"""
+AI evaluation and ranking endpoints.
+
+Provides REST API for accessing AI-generated candidate evaluations and rankings.
+"""
 
 from typing import Optional
 
@@ -7,66 +11,80 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import evaluations as evaluation_service
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
 
 class TriggerEvaluationRequest(BaseModel):
-    evaluation_type: str = Field(
-        default="pre",
-        pattern="^(pre|full)$",
-        description="Type of evaluation: 'pre' for quick screening, 'full' for deep analysis"
-    )
+    """Request model for triggering an evaluation."""
+    evaluation_type: str = Field("pre", description="Type: 'pre' or 'full'")
 
 
-@router.get("/pre/{application_id}")
+@router.get(
+    "/{application_id}/pre",
+    summary="Get Pre-Evaluation",
+    description="Get AI pre-evaluation results for quick screening. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_pre_evaluation(
-    application_id: int = Path(...),
+    application_id: int = Path(..., description="Application ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get pre-evaluation (quick screening) results for an application."""
+    """Retrieve AI pre-evaluation with initial scores and screening results."""
     result = await evaluation_service.get_pre_evaluation(application_id)
     if not result:
         raise HTTPException(status_code=404, detail="Pre-evaluation not found")
     return result
 
 
-@router.get("/full/{application_id}")
+@router.get(
+    "/{application_id}/full",
+    summary="Get Full Evaluation",
+    description="Get comprehensive AI evaluation results. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_full_evaluation(
-    application_id: int = Path(...),
+    application_id: int = Path(..., description="Application ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get full evaluation (deep analysis) results for an application."""
+    """Retrieve comprehensive AI evaluation with detailed analysis and interview focus areas."""
     result = await evaluation_service.get_full_evaluation(application_id)
     if not result:
         raise HTTPException(status_code=404, detail="Full evaluation not found")
     return result
 
 
-@router.get("/prescreening/{application_id}")
+@router.get(
+    "/{application_id}/prescreening",
+    summary="Get AI Prescreening",
+    description="Get AI prescreening round results. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_prescreening(
-    application_id: int = Path(...),
+    application_id: int = Path(..., description="Application ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get AI prescreening (scenario-based evaluation) results."""
+    """Retrieve AI prescreening results showing pass/fail status and feedback."""
     result = await evaluation_service.get_prescreening(application_id)
     if not result:
         raise HTTPException(status_code=404, detail="Prescreening not found")
     return result
 
 
-@router.post("/{application_id}/trigger")
+@router.post(
+    "/{application_id}/trigger",
+    summary="Trigger Evaluation",
+    description="Trigger a new AI evaluation. Requires application:review permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_REVIEW))],
+)
 async def trigger_evaluation(
-    application_id: int = Path(...),
+    application_id: int = Path(..., description="Application ID"),
     request: TriggerEvaluationRequest = Body(default=TriggerEvaluationRequest()),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Trigger an AI evaluation for an application.
-    
-    Use 'pre' for quick screening or 'full' for deep analysis.
-    """
+    """Queue a new AI evaluation for an application. Results available via GET endpoints."""
     result = await evaluation_service.trigger_evaluation(
         application_id=application_id,
         evaluation_type=request.evaluation_type,
@@ -79,17 +97,21 @@ async def trigger_evaluation(
     return result
 
 
-@router.get("/rankings/{job_id}")
+@router.get(
+    "/rankings",
+    summary="Get Candidate Rankings",
+    description="Get AI-ranked candidates for a job. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_candidate_rankings(
-    job_id: int = Path(...),
-    stage: Optional[str] = Query(None),
-    limit: int = Query(10, ge=1, le=50),
+    job_id: int = Query(..., description="Job ID"),
+    stage: Optional[str] = Query(None, description="Filter by pipeline stage"),
+    limit: int = Query(10, ge=1, le=50, description="Number of top candidates"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get AI-ranked list of candidates for a job."""
-    result = await evaluation_service.get_candidate_rankings(
+    """Retrieve candidates ranked by AI score for a specific job."""
+    return await evaluation_service.get_candidate_rankings(
         job_id=job_id,
         stage=stage,
         limit=limit,
     )
-    return result

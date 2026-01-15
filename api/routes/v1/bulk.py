@@ -1,49 +1,57 @@
-"""Bulk operations API routes."""
+"""
+Bulk operations endpoints.
 
-from typing import List, Optional
+Provides REST API for batch processing of candidates and applications.
+"""
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Body, Query, Path
 from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import bulk as bulk_service
 
 router = APIRouter(prefix="/bulk", tags=["bulk"])
 
 
 class BulkUploadRequest(BaseModel):
-    job_id: int
-    file_urls: List[str] = Field(..., min_length=1, max_length=100)
-    source: str = Field(default="bulk_upload")
+    """Request model for bulk resume upload."""
+    job_id: int = Field(..., description="Job to upload resumes for")
+    file_paths: list[str] = Field(..., min_length=1, description="Paths to uploaded resume files")
+    source: str = Field("bulk_upload", description="Application source tracking")
 
 
 class BulkRejectRequest(BaseModel):
-    application_ids: List[int] = Field(..., min_length=1, max_length=100)
-    reason: str = Field(..., min_length=5)
-    send_notification: bool = True
+    """Request model for bulk rejection."""
+    application_ids: list[int] = Field(..., min_length=1, description="Application IDs to reject")
+    reason: str = Field(..., min_length=5, description="Rejection reason")
+    send_notification: bool = Field(True, description="Send rejection emails")
 
 
 class BulkMoveStageRequest(BaseModel):
-    application_ids: List[int] = Field(..., min_length=1, max_length=100)
-    new_stage: str
-    reason: Optional[str] = None
+    """Request model for bulk stage move."""
+    application_ids: list[int] = Field(..., min_length=1, description="Application IDs to move")
+    stage: str = Field(..., description="Target pipeline stage")
+    reason: Optional[str] = Field(None, description="Reason for stage change")
 
 
-@router.post("/upload-resumes")
+@router.post(
+    "/upload-resumes",
+    summary="Bulk Upload Resumes",
+    description="Upload multiple resumes for processing. Requires candidate:create permission.",
+    dependencies=[Depends(require_permission(Permission.CANDIDATE_CREATE))],
+)
 async def upload_resumes_bulk(
     request: BulkUploadRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Bulk upload resumes for a job.
-    
-    Accepts a list of file URLs to process asynchronously.
-    Returns a task ID for tracking progress.
-    """
+    """Queue multiple resumes for parsing and application creation."""
     result = await bulk_service.upload_resumes_bulk(
         job_id=request.job_id,
-        file_paths=request.file_urls,
+        file_paths=request.file_paths,
         source=request.source,
     )
     
@@ -53,45 +61,59 @@ async def upload_resumes_bulk(
     return result
 
 
-@router.get("/upload-status/{task_id}")
+@router.get(
+    "/upload-status/{task_id}",
+    summary="Get Bulk Upload Status",
+    description="Check status of a bulk upload task. Requires candidate:read permission.",
+    dependencies=[Depends(require_permission(Permission.CANDIDATE_READ))],
+)
 async def get_bulk_upload_status(
-    task_id: str = Path(...),
+    task_id: str = Path(..., description="Bulk upload task ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get status of a bulk upload task."""
-    result = await bulk_service.get_bulk_upload_status(task_id)
-    return result
+    """Get progress and results of a bulk upload operation."""
+    return await bulk_service.get_bulk_upload_status(task_id)
 
 
-@router.post("/reject")
+@router.post(
+    "/reject",
+    summary="Bulk Reject Candidates",
+    description="Reject multiple candidates at once. Requires application:reject permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_REJECT))],
+)
 async def bulk_reject_candidates(
     request: BulkRejectRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Reject multiple candidates at once.
+    """Reject multiple applications in a single operation."""
+    if len(request.application_ids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 applications per request")
     
-    Optionally sends rejection notifications.
-    """
-    result = await bulk_service.bulk_reject_candidates(
+    return await bulk_service.bulk_reject_candidates(
         application_ids=request.application_ids,
         reason=request.reason,
         send_notification=request.send_notification,
         rejected_by=current_user.id,
     )
-    return result
 
 
-@router.post("/move-stage")
+@router.post(
+    "/move-stage",
+    summary="Bulk Move Stage",
+    description="Move multiple applications to a new stage. Requires application:advance permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_ADVANCE))],
+)
 async def bulk_move_stage(
     request: BulkMoveStageRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """Move multiple applications to a new stage."""
-    result = await bulk_service.bulk_move_stage(
+    """Move multiple applications to a new pipeline stage."""
+    if len(request.application_ids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 applications per request")
+    
+    return await bulk_service.bulk_move_stage(
         application_ids=request.application_ids,
-        new_stage=request.new_stage,
+        new_stage=request.stage,
         reason=request.reason,
         moved_by=current_user.id,
     )
-    return result

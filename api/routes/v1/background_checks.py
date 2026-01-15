@@ -1,46 +1,51 @@
-"""Background checks API routes."""
+"""
+Background check endpoints.
 
-from typing import List, Optional
+Provides REST API for initiating and tracking employment background checks.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Body
 from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
-from api.services import background_checks as bg_check_service
+from core.middleware.authorization import Permission, require_permission
+from api.services import background_checks as bgcheck_service
 
 router = APIRouter(prefix="/background-checks", tags=["background-checks"])
 
 
 class InitiateCheckRequest(BaseModel):
-    application_id: int
-    check_types: List[str] = Field(
+    """Request model for initiating a background check."""
+    application_id: int = Field(..., description="Application to run check for")
+    check_types: list[str] = Field(
         ...,
         min_length=1,
-        description="Types of checks: criminal, employment, education, credit"
+        description="Types: criminal, employment, education, credit, identity"
     )
-    priority: str = Field(default="normal", pattern="^(normal|rush)$")
+    priority: str = Field("normal", description="Priority: normal, high, urgent")
 
 
-@router.post("/initiate")
+@router.post(
+    "",
+    summary="Initiate Background Check",
+    description="Start a background check for a candidate. Requires application:advance permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_ADVANCE))],
+)
 async def initiate_background_check(
     request: InitiateCheckRequest,
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Initiate a background check for an application.
-    
-    Starts the background check process with the specified check types.
-    """
-    valid_types = {"criminal", "employment", "education", "credit", "identity", "reference"}
-    invalid_types = [t for t in request.check_types if t not in valid_types]
-    if invalid_types:
+    """Initiate a background verification check with selected check types."""
+    valid_types = {"criminal", "employment", "education", "credit", "identity"}
+    invalid = set(request.check_types) - valid_types
+    if invalid:
         raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid check types: {invalid_types}"
+            status_code=400,
+            detail=f"Invalid check types: {invalid}. Valid: {valid_types}"
         )
     
-    result = await bg_check_service.initiate_background_check(
+    result = await bgcheck_service.initiate_background_check(
         application_id=request.application_id,
         check_types=request.check_types,
         priority=request.priority,
@@ -53,29 +58,35 @@ async def initiate_background_check(
     return result
 
 
-@router.get("/{check_id}/status")
+@router.get(
+    "/{check_id}/status",
+    summary="Get Background Check Status",
+    description="Get current status of a background check. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_background_check_status(
-    check_id: int = Path(...),
+    check_id: int = Path(..., description="Background check ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """Get status of a background check."""
-    result = await bg_check_service.get_background_check_status(check_id)
+    """Get the current status and progress of a background check."""
+    result = await bgcheck_service.get_background_check_status(check_id)
     if not result:
         raise HTTPException(status_code=404, detail="Background check not found")
     return result
 
 
-@router.get("/{check_id}/results")
+@router.get(
+    "/{check_id}/results",
+    summary="Get Background Check Results",
+    description="Get results of a completed background check. Requires application:read permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_READ))],
+)
 async def get_background_check_results(
-    check_id: int = Path(...),
+    check_id: int = Path(..., description="Background check ID"),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Get results of a completed background check.
-    
-    Results are only available after the check is completed.
-    """
-    result = await bg_check_service.get_background_check_results(check_id)
+    """Get detailed results and findings from a completed background check."""
+    result = await bgcheck_service.get_background_check_results(check_id)
     if not result:
         raise HTTPException(status_code=404, detail="Background check not found")
     return result

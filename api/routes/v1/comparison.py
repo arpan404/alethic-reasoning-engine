@@ -1,45 +1,65 @@
-"""Comparison API routes."""
+"""
+Candidate comparison endpoints.
 
-from typing import List
+Provides REST API for side-by-side candidate comparison with AI analysis.
+"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api.dependencies import require_active_user
 from database.models.users import User
+from core.middleware.authorization import Permission, require_permission
 from api.services import comparison as comparison_service
 
-router = APIRouter(prefix="/comparison", tags=["comparison"])
+router = APIRouter(prefix="/compare", tags=["comparison"])
 
 
-class ComparisonRequest(BaseModel):
-    application_ids: List[int] = Field(..., min_length=2, max_length=5)
-    aspects: List[str] = Field(
-        default=["skills", "experience", "education", "ai_scores"],
-        description="Aspects to compare"
-    )
-
-
-@router.post("/side-by-side")
-async def compare_candidates_side_by_side(
-    request: ComparisonRequest,
+@router.get(
+    "",
+    summary="Compare Candidates",
+    description="Compare multiple candidates side-by-side. Requires application:review permission.",
+    dependencies=[Depends(require_permission(Permission.APPLICATION_REVIEW))],
+)
+async def compare_candidates(
+    application_ids: str = Query(
+        ...,
+        description="Comma-separated application IDs (2-5 candidates)",
+        example="123,456,789"
+    ),
+    aspects: Optional[str] = Query(
+        None,
+        description="Comma-separated aspects to compare: skills,experience,education,ai_scores"
+    ),
     current_user: User = Depends(require_active_user),
 ):
-    """
-    Compare multiple candidates side-by-side.
+    """Compare 2-5 candidates across selected aspects with skill overlap analysis."""
+    try:
+        ids = [int(id.strip()) for id in application_ids.split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid application ID format")
     
-    Returns a structured comparison across specified aspects
-    with AI-generated insights.
-    """
-    if len(request.application_ids) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="At least 2 applications required for comparison"
-        )
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 application IDs required")
+    if len(ids) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 applications can be compared")
+    
+    aspect_list = None
+    if aspects:
+        aspect_list = [a.strip() for a in aspects.split(",")]
+        valid_aspects = {"skills", "experience", "education", "ai_scores"}
+        invalid = set(aspect_list) - valid_aspects
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid aspects: {invalid}. Valid: {valid_aspects}"
+            )
     
     result = await comparison_service.compare_candidates(
-        application_ids=request.application_ids,
-        aspects=request.aspects
+        application_ids=ids,
+        aspects=aspect_list,
     )
     
     if "error" in result:
