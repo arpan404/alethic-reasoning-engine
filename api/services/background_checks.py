@@ -1,13 +1,7 @@
-"""
-Background check service functions for API endpoints.
+"""Background check service functions."""
 
-Provides direct database operations for background checks,
-separate from AI agent tools.
-"""
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 import logging
-import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -21,24 +15,12 @@ logger = logging.getLogger(__name__)
 
 async def initiate_background_check(
     application_id: int,
-    check_types: List[str],
+    check_types: list[str],
     priority: str = "normal",
     initiated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Initiate a background check for an application.
-    
-    Args:
-        application_id: The application to check
-        check_types: Types of checks (criminal, employment, education, credit)
-        priority: Check priority (normal, rush)
-        initiated_by: User ID who initiated
-        
-    Returns:
-        Dictionary with check ID and status
-    """
+) -> dict[str, Any]:
+    """Initiate a background check."""
     async with AsyncSessionLocal() as session:
-        # Verify application exists
         app_result = await session.execute(
             select(Application)
             .options(selectinload(Application.candidate))
@@ -52,7 +34,6 @@ async def initiate_background_check(
         if not application.candidate:
             return {"success": False, "error": "No candidate linked to application"}
         
-        # Create background check record
         check = BackgroundCheck(
             application_id=application_id,
             candidate_id=application.candidate_id,
@@ -64,7 +45,6 @@ async def initiate_background_check(
         session.add(check)
         await session.flush()
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.BACKGROUND_CHECK_INITIATED,
@@ -79,7 +59,6 @@ async def initiate_background_check(
         
         await session.commit()
         
-        # Queue the background check with external provider
         try:
             from workers.tasks import queue_background_check
             await queue_background_check(check.id)
@@ -96,16 +75,8 @@ async def initiate_background_check(
         }
 
 
-async def get_background_check_status(check_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get status of a background check.
-    
-    Args:
-        check_id: The background check ID
-        
-    Returns:
-        Dictionary with check status or None
-    """
+async def get_background_check_status(check_id: int) -> Optional[dict[str, Any]]:
+    """Get status of a background check."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(BackgroundCheck).where(BackgroundCheck.id == check_id)
@@ -115,10 +86,12 @@ async def get_background_check_status(check_id: int) -> Optional[Dict[str, Any]]
         if not check:
             return None
         
+        status_value = check.status.value if hasattr(check.status, 'value') else str(check.status)
+        
         return {
             "check_id": check.id,
             "application_id": check.application_id,
-            "status": check.status.value if hasattr(check.status, 'value') else str(check.status),
+            "status": status_value,
             "check_types": check.check_types,
             "priority": check.priority,
             "initiated_at": check.created_at.isoformat() if check.created_at else None,
@@ -127,16 +100,8 @@ async def get_background_check_status(check_id: int) -> Optional[Dict[str, Any]]
         }
 
 
-async def get_background_check_results(check_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get results of a completed background check.
-    
-    Args:
-        check_id: The background check ID
-        
-    Returns:
-        Dictionary with check results or None
-    """
+async def get_background_check_results(check_id: int) -> Optional[dict[str, Any]]:
+    """Get results of a completed background check."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(BackgroundCheck).where(BackgroundCheck.id == check_id)

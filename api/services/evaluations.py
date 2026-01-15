@@ -1,9 +1,4 @@
-"""
-Evaluation service functions for API endpoints.
-
-Provides direct database operations for AI evaluations,
-separate from AI agent tools.
-"""
+"""Evaluation service functions."""
 
 from typing import Any, Dict, List, Optional
 import logging
@@ -12,11 +7,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
-from database.models.ai_evaluations import (
-    AIEvaluation,
-    EvaluationType,
-    AIScreeningResult,
-)
+from database.models.ai_evaluations import AIEvaluation, EvaluationType, AIScreeningResult
 from database.models.applications import Application
 from database.models.candidates import Candidate
 
@@ -24,15 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_pre_evaluation(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get pre-evaluation (light screening) results for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with pre-evaluation results or None
-    """
+    """Get pre-evaluation results."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(AIEvaluation)
@@ -65,15 +48,7 @@ async def get_pre_evaluation(application_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_full_evaluation(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get full evaluation (deep analysis) results for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with full evaluation results or None
-    """
+    """Get full evaluation results."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(AIEvaluation)
@@ -110,15 +85,7 @@ async def get_full_evaluation(application_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_prescreening(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get AI prescreening (scenario-based evaluation) results.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with prescreening results or None
-    """
+    """Get AI prescreening results."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(AIScreeningResult)
@@ -154,19 +121,8 @@ async def trigger_evaluation(
     evaluation_type: str = "pre",
     requested_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Trigger an AI evaluation for an application.
-    
-    Args:
-        application_id: The application to evaluate
-        evaluation_type: Type of evaluation ('pre' or 'full')
-        requested_by: User ID who requested
-        
-    Returns:
-        Dictionary with task ID for tracking
-    """
+    """Trigger an AI evaluation."""
     async with AsyncSessionLocal() as session:
-        # Verify application exists
         result = await session.execute(
             select(Application).where(Application.id == application_id)
         )
@@ -175,7 +131,6 @@ async def trigger_evaluation(
         if not application:
             return {"success": False, "error": "Application not found"}
     
-    # Queue the evaluation task
     try:
         from workers.tasks import queue_evaluation
         task_id = await queue_evaluation(
@@ -200,17 +155,7 @@ async def get_candidate_rankings(
     stage: Optional[str] = None,
     limit: int = 10,
 ) -> Dict[str, Any]:
-    """
-    Get ranked list of candidates for a job.
-    
-    Args:
-        job_id: The job ID
-        stage: Optional filter by stage
-        limit: Maximum candidates to return
-        
-    Returns:
-        Dictionary with ranked candidates
-    """
+    """Get ranked candidates for a job."""
     async with AsyncSessionLocal() as session:
         query = (
             select(Application)

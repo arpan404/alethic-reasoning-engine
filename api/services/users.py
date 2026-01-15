@@ -1,16 +1,10 @@
-"""
-User service functions for API endpoints.
+"""User service functions."""
 
-Provides direct database operations for user management,
-separate from AI agent tools.
-"""
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from datetime import datetime
 import logging
 
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
 from database.models.users import User, UserRole, UserStatus
@@ -18,16 +12,8 @@ from database.models.users import User, UserRole, UserStatus
 logger = logging.getLogger(__name__)
 
 
-async def get_user(user_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get user details.
-    
-    Args:
-        user_id: The user ID
-        
-    Returns:
-        Dictionary with user details or None
-    """
+async def get_user(user_id: int) -> Optional[dict[str, Any]]:
+    """Get user details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(User.id == user_id)
@@ -60,21 +46,8 @@ async def list_users(
     search_query: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-) -> Dict[str, Any]:
-    """
-    List users for an organization.
-    
-    Args:
-        organization_id: The organization ID
-        role: Filter by role
-        status: Filter by status
-        search_query: Search by name or email
-        limit: Maximum results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with users list
-    """
+) -> dict[str, Any]:
+    """List users for an organization."""
     async with AsyncSessionLocal() as session:
         query = select(User).where(User.organization_id == organization_id)
         
@@ -98,7 +71,6 @@ async def list_users(
                 func.concat(User.first_name, ' ', User.last_name, ' ', User.email).ilike(search_pattern)
             )
         
-        # Total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
@@ -109,7 +81,7 @@ async def list_users(
         result = await session.execute(query)
         users = result.scalars().all()
         
-        user_list = []
+        user_list: list[dict[str, Any]] = []
         for user in users:
             user_list.append({
                 "id": user.id,
@@ -131,20 +103,10 @@ async def list_users(
 
 async def update_user(
     user_id: int,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     updated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Update user profile.
-    
-    Args:
-        user_id: The user to update
-        updates: Dictionary of fields to update
-        updated_by: User ID who made the update
-        
-    Returns:
-        Dictionary with success status
-    """
+) -> dict[str, Any]:
+    """Update user profile."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(User.id == user_id)
@@ -154,7 +116,6 @@ async def update_user(
         if not user:
             return {"success": False, "error": "User not found"}
         
-        # Apply allowed updates
         allowed_fields = ["first_name", "last_name", "phone", "timezone", "avatar_url"]
         
         for field in allowed_fields:
@@ -176,18 +137,8 @@ async def deactivate_user(
     user_id: int,
     reason: Optional[str] = None,
     deactivated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Deactivate a user account.
-    
-    Args:
-        user_id: The user to deactivate
-        reason: Reason for deactivation
-        deactivated_by: User ID who deactivated
-        
-    Returns:
-        Dictionary with success status
-    """
+) -> dict[str, Any]:
+    """Deactivate a user account."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(User.id == user_id)
@@ -213,16 +164,8 @@ async def deactivate_user(
         }
 
 
-async def get_user_permissions(user_id: int) -> Dict[str, Any]:
-    """
-    Get permissions for a user.
-    
-    Args:
-        user_id: The user ID
-        
-    Returns:
-        Dictionary with permissions
-    """
+async def get_user_permissions(user_id: int) -> dict[str, Any]:
+    """Get permissions for a user."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(User.id == user_id)
@@ -232,8 +175,7 @@ async def get_user_permissions(user_id: int) -> Dict[str, Any]:
         if not user:
             return {"error": "User not found"}
         
-        # Define role-based permissions
-        role_permissions = {
+        role_permissions: dict[str, list[str]] = {
             "admin": [
                 "users.read", "users.write", "users.delete",
                 "jobs.read", "jobs.write", "jobs.delete",

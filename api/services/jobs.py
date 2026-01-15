@@ -1,9 +1,4 @@
-"""
-Job service functions for API endpoints.
-
-Provides direct database operations for job management,
-separate from AI agent tools.
-"""
+"""Job service functions."""
 
 from typing import Any, Dict, List, Optional
 import logging
@@ -19,15 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_job(job_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get detailed information about a job.
-    
-    Args:
-        job_id: The job ID
-        
-    Returns:
-        Dictionary containing job details, or None if not found
-    """
+    """Get job details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Job)
@@ -39,7 +26,6 @@ async def get_job(job_id: int) -> Optional[Dict[str, Any]]:
         if not job:
             return None
         
-        # Get application count
         count_result = await session.execute(
             select(func.count())
             .select_from(Application)
@@ -78,20 +64,7 @@ async def list_jobs(
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """
-    List jobs for an organization with filtering.
-    
-    Args:
-        organization_id: The organization ID
-        status: Filter by job status
-        department: Filter by department
-        search_query: Search by title
-        limit: Maximum number of results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with jobs list and pagination info
-    """
+    """List jobs for an organization."""
     async with AsyncSessionLocal() as session:
         query = select(Job).where(Job.organization_id == organization_id)
         
@@ -100,7 +73,7 @@ async def list_jobs(
                 status_enum = JobStatus(status)
                 query = query.where(Job.status == status_enum)
             except ValueError:
-                pass  # Invalid status, skip filter
+                pass
                 
         if department:
             query = query.where(Job.department == department)
@@ -108,12 +81,10 @@ async def list_jobs(
         if search_query:
             query = query.where(Job.title.ilike(f"%{search_query}%"))
         
-        # Get total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
         
-        # Apply pagination and ordering
         query = query.order_by(Job.created_at.desc())
         query = query.limit(limit).offset(offset)
         
@@ -122,7 +93,6 @@ async def list_jobs(
         
         job_list = []
         for job in jobs:
-            # Get application count for each job
             count_result = await session.execute(
                 select(func.count())
                 .select_from(Application)
@@ -151,15 +121,7 @@ async def list_jobs(
 
 
 async def get_job_requirements(job_id: int) -> Dict[str, Any]:
-    """
-    Get detailed requirements for a job.
-    
-    Args:
-        job_id: The job ID
-        
-    Returns:
-        Dictionary with structured requirements data
-    """
+    """Get job requirements."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Job)

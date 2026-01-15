@@ -1,9 +1,4 @@
-"""
-Candidate service functions for API endpoints.
-
-Provides direct database operations for candidate management,
-separate from AI agent tools.
-"""
+"""Candidate service functions."""
 
 from typing import Any, Dict, List, Optional
 import logging
@@ -21,15 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_candidate(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get detailed information about a candidate via their application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary containing candidate details, or None if not found
-    """
+    """Get detailed candidate information via application ID."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -88,21 +75,7 @@ async def list_candidates(
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """
-    List candidates for a specific job with filtering.
-    
-    Args:
-        job_id: The job ID to list candidates for
-        stage: Filter by current stage
-        status: Filter by application status
-        search_query: Search by name or email
-        is_shortlisted: Filter by shortlisted status
-        limit: Maximum number of results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with candidates list and pagination info
-    """
+    """List candidates for a job with filtering."""
     async with AsyncSessionLocal() as session:
         query = (
             select(Application)
@@ -117,7 +90,6 @@ async def list_candidates(
         if is_shortlisted is not None:
             query = query.where(Application.is_shortlisted == is_shortlisted)
             
-        # Search by name or email
         if search_query:
             search_pattern = f"%{search_query}%"
             query = query.join(Candidate).where(
@@ -128,12 +100,10 @@ async def list_candidates(
                 )
             )
         
-        # Get total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
         
-        # Apply pagination
         query = query.order_by(Application.applied_at.desc())
         query = query.limit(limit).offset(offset)
         
@@ -171,17 +141,7 @@ async def shortlist_candidate(
     reason: Optional[str] = None,
     shortlisted_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Shortlist a candidate for a job.
-    
-    Args:
-        application_id: The application to shortlist
-        reason: Reason for shortlisting
-        shortlisted_by: User ID who is shortlisting
-        
-    Returns:
-        Dictionary with success status
-    """
+    """Shortlist a candidate."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application).where(Application.id == application_id)
@@ -197,7 +157,6 @@ async def shortlist_candidate(
         application.is_shortlisted = True
         application.current_stage = "shortlisted"
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.SHORTLISTED,
@@ -222,18 +181,7 @@ async def reject_candidate(
     send_notification: bool = True,
     rejected_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Reject a candidate's application.
-    
-    Args:
-        application_id: The application to reject
-        reason: Reason for rejection
-        send_notification: Whether to send rejection email
-        rejected_by: User ID who is rejecting
-        
-    Returns:
-        Dictionary with success status
-    """
+    """Reject a candidate's application."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -252,7 +200,6 @@ async def reject_candidate(
         application.current_stage = "rejected"
         application.rejection_reason = reason
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.REJECTED,
@@ -263,10 +210,8 @@ async def reject_candidate(
         
         await session.commit()
         
-        # Queue email notification if requested
         email_queued = False
         if send_notification and application.candidate:
-            # Import here to avoid circular imports
             from workers.tasks import queue_rejection_email
             try:
                 await queue_rejection_email(application_id)
@@ -283,15 +228,7 @@ async def reject_candidate(
 
 
 async def get_candidate_documents(application_id: int) -> Dict[str, Any]:
-    """
-    Get all documents associated with an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary containing documents
-    """
+    """Get all documents for an application."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)

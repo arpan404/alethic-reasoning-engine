@@ -1,9 +1,4 @@
-"""
-Application service functions for API endpoints.
-
-Provides direct database operations for application management,
-separate from AI agent tools.
-"""
+"""Application service functions."""
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -26,15 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_application(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get detailed information about an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary containing application details, or None if not found
-    """
+    """Get application details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -87,22 +74,7 @@ async def list_applications(
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """
-    List applications for a job with filtering.
-    
-    Args:
-        job_id: The job ID to list applications for
-        stage: Filter by current stage
-        status: Filter by status
-        is_shortlisted: Filter by shortlisted status
-        sort_by: Field to sort by
-        sort_order: Sort order (asc/desc)
-        limit: Maximum number of results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with applications list and pagination info
-    """
+    """List applications for a job with filtering."""
     async with AsyncSessionLocal() as session:
         query = (
             select(Application)
@@ -117,19 +89,16 @@ async def list_applications(
         if is_shortlisted is not None:
             query = query.where(Application.is_shortlisted == is_shortlisted)
         
-        # Get total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
         
-        # Apply sorting
         sort_column = getattr(Application, sort_by, Application.applied_at)
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
         
-        # Apply pagination
         query = query.limit(limit).offset(offset)
         
         result = await session.execute(query)
@@ -162,18 +131,7 @@ async def move_application_stage(
     reason: Optional[str] = None,
     moved_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Move an application to a new stage in the pipeline.
-    
-    Args:
-        application_id: The application to move
-        new_stage: The new stage name
-        reason: Optional reason for the stage change
-        moved_by: User ID who initiated the move
-        
-    Returns:
-        Dictionary with success status and stage info
-    """
+    """Move an application to a new stage."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application).where(Application.id == application_id)
@@ -187,7 +145,6 @@ async def move_application_stage(
         application.current_stage = new_stage
         application.updated_at = datetime.utcnow()
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.STAGE_CHANGED,
@@ -211,17 +168,8 @@ async def move_application_stage(
 
 
 async def get_application_history(application_id: int) -> Dict[str, Any]:
-    """
-    Get the full activity history for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with chronological activity history
-    """
+    """Get activity history for an application."""
     async with AsyncSessionLocal() as session:
-        # Get activities
         result = await session.execute(
             select(ApplicationActivity)
             .where(ApplicationActivity.application_id == application_id)
@@ -229,7 +177,6 @@ async def get_application_history(application_id: int) -> Dict[str, Any]:
         )
         activities = result.scalars().all()
         
-        # Get notes
         notes_result = await session.execute(
             select(ApplicationNote)
             .where(ApplicationNote.application_id == application_id)
@@ -257,7 +204,6 @@ async def get_application_history(application_id: int) -> Dict[str, Any]:
                 "timestamp": note.created_at.isoformat() if note.created_at else None,
             })
         
-        # Sort by timestamp
         history.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
         
         return {

@@ -1,16 +1,11 @@
-"""
-Compliance service functions for API endpoints.
+"""Compliance service functions (GDPR, FCRA, EEO)."""
 
-Provides direct database operations for compliance (GDPR, FCRA, EEO),
-separate from AI agent tools.
-"""
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from datetime import datetime
 import logging
 import uuid
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
@@ -28,21 +23,9 @@ async def generate_adverse_action_notice(
     reason: str,
     notice_type: str = "pre",
     generated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Generate FCRA-compliant adverse action notice.
-    
-    Args:
-        application_id: The application this notice is for
-        reason: Reason for adverse action
-        notice_type: Type of notice ('pre' or 'final')
-        generated_by: User ID who generated
-        
-    Returns:
-        Dictionary with notice details
-    """
+) -> dict[str, Any]:
+    """Generate FCRA-compliant adverse action notice."""
     async with AsyncSessionLocal() as session:
-        # Get application and candidate
         result = await session.execute(
             select(Application)
             .options(selectinload(Application.candidate))
@@ -55,7 +38,6 @@ async def generate_adverse_action_notice(
         
         candidate = application.candidate
         
-        # Create adverse action notice
         notice = AdverseActionNotice(
             application_id=application_id,
             candidate_id=candidate.id,
@@ -67,7 +49,6 @@ async def generate_adverse_action_notice(
         session.add(notice)
         await session.flush()
         
-        # Generate notice content
         notice_content = {
             "notice_id": notice.id,
             "type": notice_type,
@@ -81,11 +62,6 @@ async def generate_adverse_action_notice(
                 "Right to dispute the accuracy of the report",
                 "Right to a description of consumer rights",
             ],
-            "agency_contact": {
-                "name": "Consumer Reporting Agency",
-                "address": "Address on file",
-                "phone": "Phone on file",
-            },
         }
         
         await session.commit()
@@ -105,20 +81,8 @@ async def verify_work_authorization(
     document_number: Optional[str] = None,
     expiry_date: Optional[str] = None,
     verified_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Verify I-9 work authorization for a candidate.
-    
-    Args:
-        application_id: The application to verify
-        document_type: Type of document
-        document_number: Document ID number
-        expiry_date: Document expiration date
-        verified_by: User ID who verified
-        
-    Returns:
-        Dictionary with verification status
-    """
+) -> dict[str, Any]:
+    """Verify I-9 work authorization."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -130,15 +94,13 @@ async def verify_work_authorization(
         if not application or not application.candidate:
             return {"success": False, "error": "Application not found"}
         
-        # Parse expiry date
-        expiry = None
+        expiry: Optional[datetime] = None
         if expiry_date:
             try:
                 expiry = datetime.strptime(expiry_date, "%Y-%m-%d")
             except ValueError:
                 pass
         
-        # Create work authorization record
         authorization = WorkAuthorization(
             application_id=application_id,
             candidate_id=application.candidate_id,
@@ -153,7 +115,6 @@ async def verify_work_authorization(
         
         await session.commit()
         
-        # Queue E-Verify check if applicable
         try:
             from workers.tasks import queue_everify_check
             await queue_everify_check(authorization.id)
@@ -169,25 +130,13 @@ async def verify_work_authorization(
         }
 
 
-async def export_user_data(user_id: int) -> Dict[str, Any]:
-    """
-    Export all data for a user (GDPR Article 15).
-    
-    Args:
-        user_id: The user ID to export data for
-        
-    Returns:
-        Dictionary with all user data
-    """
+async def export_user_data(user_id: int) -> dict[str, Any]:
+    """Export all data for a user (GDPR Article 15)."""
     async with AsyncSessionLocal() as session:
-        # Get user
-        result = await session.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         
         if not user:
-            # Check if it's a candidate
             cand_result = await session.execute(
                 select(Candidate).where(Candidate.id == user_id)
             )
@@ -198,8 +147,7 @@ async def export_user_data(user_id: int) -> Dict[str, Any]:
             
             return {"error": "User not found"}
         
-        # Compile user data
-        data = {
+        data: dict[str, Any] = {
             "export_date": datetime.utcnow().isoformat(),
             "export_type": "GDPR_DSAR",
             "profile": {
@@ -213,7 +161,6 @@ async def export_user_data(user_id: int) -> Dict[str, Any]:
             "format": "JSON",
         }
         
-        # Get audit logs for user
         audit_result = await session.execute(
             select(AuditLog)
             .where(AuditLog.user_id == user_id)
@@ -234,9 +181,8 @@ async def export_user_data(user_id: int) -> Dict[str, Any]:
         return data
 
 
-async def _export_candidate_data(session, candidate: Candidate) -> Dict[str, Any]:
+async def _export_candidate_data(session: Any, candidate: Candidate) -> dict[str, Any]:
     """Export candidate-specific data."""
-    # Get applications
     app_result = await session.execute(
         select(Application).where(Application.candidate_id == candidate.id)
     )
@@ -266,21 +212,14 @@ async def _export_candidate_data(session, candidate: Candidate) -> Dict[str, Any
     }
 
 
-async def erase_user_data(user_id: int, erased_by: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Erase all user data (GDPR Article 17).
-    
-    Args:
-        user_id: The user ID to erase data for
-        erased_by: User ID who initiated erasure
-        
-    Returns:
-        Dictionary with erasure confirmation
-    """
+async def erase_user_data(
+    user_id: int,
+    erased_by: Optional[int] = None,
+) -> dict[str, Any]:
+    """Erase all user data (GDPR Article 17)."""
     confirmation_id = f"erasure_{uuid.uuid4().hex[:12]}"
     
     async with AsyncSessionLocal() as session:
-        # Check if candidate
         cand_result = await session.execute(
             select(Candidate).where(Candidate.id == user_id)
         )
@@ -289,7 +228,6 @@ async def erase_user_data(user_id: int, erased_by: Optional[int] = None) -> Dict
         records_deleted = 0
         
         if candidate:
-            # Anonymize candidate data instead of hard delete
             candidate.first_name = "REDACTED"
             candidate.last_name = "REDACTED"
             candidate.email = f"redacted_{candidate.id}@deleted.local"
@@ -304,7 +242,6 @@ async def erase_user_data(user_id: int, erased_by: Optional[int] = None) -> Dict
             
             await session.commit()
         
-        # Log the erasure
         audit = AuditLog(
             user_id=erased_by,
             action="data_erasure",
@@ -329,19 +266,8 @@ async def generate_eeo_report(
     end_date: str,
     job_id: Optional[int] = None,
     organization_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Generate EEO (Equal Employment Opportunity) report.
-    
-    Args:
-        start_date: Report start date (YYYY-MM-DD)
-        end_date: Report end date (YYYY-MM-DD)
-        job_id: Optional filter by job
-        organization_id: Organization ID
-        
-    Returns:
-        Dictionary with report data or task ID
-    """
+) -> dict[str, Any]:
+    """Generate EEO report."""
     try:
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
@@ -350,7 +276,6 @@ async def generate_eeo_report(
     
     task_id = f"eeo_report_{uuid.uuid4().hex[:12]}"
     
-    # Queue report generation
     try:
         from workers.tasks import queue_eeo_report
         await queue_eeo_report(
@@ -365,10 +290,7 @@ async def generate_eeo_report(
             "success": True,
             "task_id": task_id,
             "status": "queued",
-            "report_period": {
-                "start": start_date,
-                "end": end_date,
-            },
+            "report_period": {"start": start_date, "end": end_date},
         }
     except Exception as e:
         logger.error(f"Failed to queue EEO report: {e}")

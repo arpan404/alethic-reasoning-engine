@@ -1,11 +1,6 @@
-"""
-Webhook service functions for API endpoints.
+"""Webhook service functions."""
 
-Provides direct database operations for webhook management,
-separate from AI agent tools.
-"""
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from datetime import datetime
 import logging
 import uuid
@@ -13,7 +8,6 @@ import hashlib
 import hmac
 
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
 from database.models.integrations import Webhook, WebhookDelivery, WebhookStatus
@@ -24,26 +18,12 @@ logger = logging.getLogger(__name__)
 async def register_webhook(
     organization_id: int,
     url: str,
-    events: List[str],
+    events: list[str],
     secret: Optional[str] = None,
     name: Optional[str] = None,
     created_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Register a new webhook.
-    
-    Args:
-        organization_id: The organization ID
-        url: Webhook endpoint URL
-        events: List of events to subscribe to
-        secret: Optional signing secret (generated if not provided)
-        name: Optional webhook name
-        created_by: User ID who created
-        
-    Returns:
-        Dictionary with webhook details
-    """
-    # Generate secret if not provided
+) -> dict[str, Any]:
+    """Register a new webhook."""
     if not secret:
         secret = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
     
@@ -76,19 +56,8 @@ async def list_webhooks(
     status: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-) -> Dict[str, Any]:
-    """
-    List webhooks for an organization.
-    
-    Args:
-        organization_id: The organization ID
-        status: Filter by status
-        limit: Maximum results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with webhooks list
-    """
+) -> dict[str, Any]:
+    """List webhooks for an organization."""
     async with AsyncSessionLocal() as session:
         query = select(Webhook).where(Webhook.organization_id == organization_id)
         
@@ -99,7 +68,6 @@ async def list_webhooks(
             except ValueError:
                 pass
         
-        # Total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
@@ -110,7 +78,7 @@ async def list_webhooks(
         result = await session.execute(query)
         webhooks = result.scalars().all()
         
-        webhook_list = []
+        webhook_list: list[dict[str, Any]] = []
         for wh in webhooks:
             webhook_list.append({
                 "id": wh.id,
@@ -130,16 +98,8 @@ async def list_webhooks(
         }
 
 
-async def get_webhook(webhook_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get webhook details.
-    
-    Args:
-        webhook_id: The webhook ID
-        
-    Returns:
-        Dictionary with webhook details or None
-    """
+async def get_webhook(webhook_id: int) -> Optional[dict[str, Any]]:
+    """Get webhook details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Webhook).where(Webhook.id == webhook_id)
@@ -165,20 +125,10 @@ async def get_webhook(webhook_id: int) -> Optional[Dict[str, Any]]:
 
 async def update_webhook(
     webhook_id: int,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     updated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Update webhook configuration.
-    
-    Args:
-        webhook_id: The webhook to update
-        updates: Dictionary of fields to update
-        updated_by: User ID who updated
-        
-    Returns:
-        Dictionary with success status
-    """
+) -> dict[str, Any]:
+    """Update webhook configuration."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Webhook).where(Webhook.id == webhook_id)
@@ -188,7 +138,6 @@ async def update_webhook(
         if not webhook:
             return {"success": False, "error": "Webhook not found"}
         
-        # Apply allowed updates
         allowed_fields = ["name", "url", "events", "status"]
         
         for field in allowed_fields:
@@ -215,17 +164,8 @@ async def update_webhook(
 async def delete_webhook(
     webhook_id: int,
     deleted_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Delete a webhook.
-    
-    Args:
-        webhook_id: The webhook to delete
-        deleted_by: User ID who deleted
-        
-    Returns:
-        Dictionary with success status
-    """
+) -> dict[str, Any]:
+    """Delete a webhook."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Webhook).where(Webhook.id == webhook_id)
@@ -245,16 +185,8 @@ async def delete_webhook(
         }
 
 
-async def test_webhook(webhook_id: int) -> Dict[str, Any]:
-    """
-    Send a test request to webhook endpoint.
-    
-    Args:
-        webhook_id: The webhook to test
-        
-    Returns:
-        Dictionary with test result
-    """
+async def test_webhook(webhook_id: int) -> dict[str, Any]:
+    """Send a test request to webhook endpoint."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Webhook).where(Webhook.id == webhook_id)
@@ -264,19 +196,15 @@ async def test_webhook(webhook_id: int) -> Dict[str, Any]:
         if not webhook:
             return {"success": False, "error": "Webhook not found"}
     
-    # Send test request
     import httpx
     
-    test_payload = {
+    test_payload: dict[str, Any] = {
         "event": "test",
         "timestamp": datetime.utcnow().isoformat(),
         "webhook_id": webhook_id,
-        "data": {
-            "message": "This is a test webhook delivery",
-        },
+        "data": {"message": "This is a test webhook delivery"},
     }
     
-    # Generate signature
     payload_bytes = str(test_payload).encode('utf-8')
     signature = hmac.new(
         webhook.secret.encode('utf-8'),
@@ -315,26 +243,14 @@ async def get_webhook_deliveries(
     status: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-) -> Dict[str, Any]:
-    """
-    Get delivery history for a webhook.
-    
-    Args:
-        webhook_id: The webhook ID
-        status: Filter by delivery status
-        limit: Maximum results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with deliveries list
-    """
+) -> dict[str, Any]:
+    """Get delivery history for a webhook."""
     async with AsyncSessionLocal() as session:
         query = select(WebhookDelivery).where(WebhookDelivery.webhook_id == webhook_id)
         
         if status:
             query = query.where(WebhookDelivery.status == status)
         
-        # Total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
@@ -345,7 +261,7 @@ async def get_webhook_deliveries(
         result = await session.execute(query)
         deliveries = result.scalars().all()
         
-        delivery_list = []
+        delivery_list: list[dict[str, Any]] = []
         for d in deliveries:
             delivery_list.append({
                 "id": d.id,

@@ -455,6 +455,7 @@ async def schedule_interview(
     application_id: int,
     interview_type: str,
     interviewer_ids: list,
+    scheduled_at: str,
     duration_minutes: int = 60,
 ) -> dict:
     """
@@ -467,16 +468,23 @@ async def schedule_interview(
         application_id: The application to schedule interview for.
         interview_type: Type of interview ('phone', 'technical', 'onsite').
         interviewer_ids: List of user IDs for interviewers.
+        scheduled_at: Interview time in ISO format (YYYY-MM-DDTHH:MM:SS).
         duration_minutes: Interview duration in minutes (default: 60).
     
     Returns:
         dict: Contains 'success' boolean and interview details
               including scheduled time slots.
     """
+    try:
+        dt = datetime.fromisoformat(scheduled_at)
+    except ValueError:
+        return {"success": False, "error": "Invalid date format. Use ISO format."}
+
     return await _schedule_interview(
         application_id=application_id,
         interview_type=interview_type,
         interviewer_ids=interviewer_ids,
+        scheduled_at=dt,
         duration_minutes=duration_minutes,
     )
 

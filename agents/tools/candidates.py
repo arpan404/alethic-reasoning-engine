@@ -20,10 +20,15 @@ from database.models.applications import Application
 from database.models.jobs import Job
 from database.models.files import File
 from agents.tools.queue import enqueue_task
+from core.cache import cache
+
+def _get_candidate_cache_key(func, application_id, *args, **kwargs):
+    return f"candidate:app:{application_id}"
 
 logger = logging.getLogger(__name__)
 
 
+@cache(ttl=300, key_builder=_get_candidate_cache_key)
 async def get_candidate_for_application(application_id: int) -> Optional[Dict[str, Any]]:
     """Get detailed information about a candidate via their application.
     

@@ -7,15 +7,29 @@ including retrieval, listing, and requirement extraction.
 from typing import Any, Dict, List, Optional
 import logging
 
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, desc
 from sqlalchemy.orm import selectinload
 
 from database.engine import AsyncSessionLocal
 from database.models.jobs import Job, JobStatus, JobRequirement, HiringTeamMember
+from database.models.applications import Application
+from core.cache import cache
+
+def _get_job_cache_key(func, job_id, *args, **kwargs):
+    return f"job:{job_id}"
+
+def _list_jobs_cache_key(func, organization_id, status=None, department_id=None, *args, **kwargs):
+    parts = [f"jobs:org:{organization_id}"]
+    if status:
+        parts.append(f"status:{status}")
+    if department_id:
+        parts.append(f"dept:{department_id}")
+    return ":".join(parts)
 
 logger = logging.getLogger(__name__)
 
 
+@cache(ttl=600, key_builder=_get_job_cache_key)
 async def get_job(job_id: int) -> Optional[Dict[str, Any]]:
     """Get detailed information about a job.
     
@@ -92,6 +106,7 @@ async def get_job(job_id: int) -> Optional[Dict[str, Any]]:
         }
 
 
+@cache(ttl=60, key_builder=_list_jobs_cache_key)
 async def list_jobs(
     organization_id: int,
     status: Optional[str] = None,

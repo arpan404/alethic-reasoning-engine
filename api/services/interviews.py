@@ -1,9 +1,4 @@
-"""
-Interview service functions for API endpoints.
-
-Provides direct database operations for interview management,
-separate from AI agent tools.
-"""
+"""Interview service functions."""
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -30,24 +25,8 @@ async def schedule_interview(
     notes: Optional[str] = None,
     scheduled_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Schedule an interview for an application.
-    
-    Args:
-        application_id: The application to schedule interview for
-        interview_type: Type of interview
-        scheduled_at: Interview datetime
-        duration_minutes: Duration in minutes
-        interviewer_ids: List of interviewer user IDs
-        location: Interview location or video link
-        notes: Additional notes
-        scheduled_by: User ID who scheduled
-        
-    Returns:
-        Dictionary with success status and interview details
-    """
+    """Schedule an interview."""
     async with AsyncSessionLocal() as session:
-        # Verify application exists
         app_result = await session.execute(
             select(Application).where(Application.id == application_id)
         )
@@ -56,13 +35,11 @@ async def schedule_interview(
         if not application:
             return {"success": False, "error": "Application not found"}
         
-        # Map interview type string to enum
         try:
             interview_type_enum = InterviewType(interview_type)
         except ValueError:
             interview_type_enum = InterviewType.PHONE_SCREEN
         
-        # Create interview
         interview = Interview(
             application_id=application_id,
             job_id=application.job_id,
@@ -75,9 +52,8 @@ async def schedule_interview(
             scheduled_by_id=scheduled_by,
         )
         session.add(interview)
-        await session.flush()  # Get the interview ID
+        await session.flush()
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.INTERVIEW_SCHEDULED,
@@ -113,22 +89,7 @@ async def list_interviews(
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """
-    List interviews with filtering.
-    
-    Args:
-        application_id: Filter by application
-        job_id: Filter by job
-        interviewer_id: Filter by interviewer
-        status: Filter by status
-        start_date: Filter by start date
-        end_date: Filter by end date
-        limit: Maximum results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with interviews list
-    """
+    """List interviews with filtering."""
     async with AsyncSessionLocal() as session:
         query = select(Interview).options(
             selectinload(Interview.application).selectinload(Application.candidate)
@@ -149,12 +110,10 @@ async def list_interviews(
         if end_date:
             query = query.where(Interview.scheduled_at <= end_date)
         
-        # Get total
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
         
-        # Apply pagination
         query = query.order_by(Interview.scheduled_at.desc())
         query = query.limit(limit).offset(offset)
         
@@ -188,15 +147,7 @@ async def list_interviews(
 
 
 async def get_interview(interview_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get interview details.
-    
-    Args:
-        interview_id: The interview ID
-        
-    Returns:
-        Dictionary with interview details or None
-    """
+    """Get interview details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Interview)
@@ -235,17 +186,7 @@ async def cancel_interview(
     reason: Optional[str] = None,
     cancelled_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Cancel an interview.
-    
-    Args:
-        interview_id: The interview to cancel
-        reason: Reason for cancellation
-        cancelled_by: User ID who cancelled
-        
-    Returns:
-        Dictionary with success status
-    """
+    """Cancel an interview."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Interview).where(Interview.id == interview_id)
@@ -261,7 +202,6 @@ async def cancel_interview(
         interview.status = InterviewStatus.CANCELLED
         interview.cancellation_reason = reason
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=interview.application_id,
             activity_type=ApplicationActivityType.INTERVIEW_CANCELLED,
@@ -285,18 +225,7 @@ async def reschedule_interview(
     reason: Optional[str] = None,
     rescheduled_by: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Reschedule an interview.
-    
-    Args:
-        interview_id: The interview to reschedule
-        new_datetime: New datetime
-        reason: Reason for rescheduling
-        rescheduled_by: User ID who rescheduled
-        
-    Returns:
-        Dictionary with success status
-    """
+    """Reschedule an interview."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Interview).where(Interview.id == interview_id)
@@ -310,7 +239,6 @@ async def reschedule_interview(
         interview.scheduled_at = new_datetime
         interview.status = InterviewStatus.RESCHEDULED
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=interview.application_id,
             activity_type=ApplicationActivityType.INTERVIEW_RESCHEDULED,

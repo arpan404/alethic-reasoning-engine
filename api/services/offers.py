@@ -1,12 +1,7 @@
-"""
-Offer service functions for API endpoints.
+"""Offer service functions."""
 
-Provides direct database operations for offer management,
-separate from AI agent tools.
-"""
-
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any, Optional
+from datetime import datetime, timedelta
 from decimal import Decimal
 import logging
 
@@ -16,8 +11,6 @@ from sqlalchemy.orm import selectinload
 from database.engine import AsyncSessionLocal
 from database.models.offers import Offer, OfferStatus
 from database.models.applications import Application, ApplicationActivity, ApplicationActivityType
-from database.models.candidates import Candidate
-from database.models.jobs import Job
 
 logger = logging.getLogger(__name__)
 
@@ -29,29 +22,12 @@ async def create_offer(
     start_date: Optional[str] = None,
     signing_bonus: Optional[Decimal] = None,
     equity_percentage: Optional[Decimal] = None,
-    benefits: Optional[List[str]] = None,
+    benefits: Optional[list[str]] = None,
     notes: Optional[str] = None,
     created_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Create a new job offer for an application.
-    
-    Args:
-        application_id: The application to create offer for
-        salary: Base salary amount
-        salary_currency: Currency code
-        start_date: Proposed start date
-        signing_bonus: Optional signing bonus
-        equity_percentage: Optional equity
-        benefits: List of benefits
-        notes: Additional notes
-        created_by: User ID who created
-        
-    Returns:
-        Dictionary with offer details
-    """
+) -> dict[str, Any]:
+    """Create a new job offer."""
     async with AsyncSessionLocal() as session:
-        # Get application
         result = await session.execute(
             select(Application)
             .options(
@@ -65,15 +41,13 @@ async def create_offer(
         if not application:
             return {"success": False, "error": "Application not found"}
         
-        # Parse start date
-        parsed_start_date = None
+        parsed_start_date: Optional[datetime] = None
         if start_date:
             try:
                 parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
             except ValueError:
                 pass
         
-        # Create offer
         offer = Offer(
             application_id=application_id,
             candidate_id=application.candidate_id,
@@ -91,7 +65,6 @@ async def create_offer(
         session.add(offer)
         await session.flush()
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=application_id,
             activity_type=ApplicationActivityType.OFFER_CREATED,
@@ -112,16 +85,8 @@ async def create_offer(
         }
 
 
-async def get_offer(offer_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get offer details.
-    
-    Args:
-        offer_id: The offer ID
-        
-    Returns:
-        Dictionary with offer details or None
-    """
+async def get_offer(offer_id: int) -> Optional[dict[str, Any]]:
+    """Get offer details."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Offer)
@@ -136,7 +101,7 @@ async def get_offer(offer_id: int) -> Optional[Dict[str, Any]]:
         if not offer:
             return None
         
-        candidate_name = None
+        candidate_name: Optional[str] = None
         if offer.application and offer.application.candidate:
             c = offer.application.candidate
             candidate_name = f"{c.first_name} {c.last_name}"
@@ -167,20 +132,8 @@ async def list_offers(
     organization_id: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
-) -> Dict[str, Any]:
-    """
-    List offers with filtering.
-    
-    Args:
-        job_id: Filter by job
-        status: Filter by status
-        organization_id: Filter by organization
-        limit: Maximum results
-        offset: Pagination offset
-        
-    Returns:
-        Dictionary with offers list
-    """
+) -> dict[str, Any]:
+    """List offers with filtering."""
     async with AsyncSessionLocal() as session:
         query = (
             select(Offer)
@@ -199,7 +152,6 @@ async def list_offers(
             except ValueError:
                 pass
         
-        # Total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
@@ -210,9 +162,9 @@ async def list_offers(
         result = await session.execute(query)
         offers = result.scalars().all()
         
-        offer_list = []
+        offer_list: list[dict[str, Any]] = []
         for offer in offers:
-            candidate_name = None
+            candidate_name: Optional[str] = None
             if offer.application and offer.application.candidate:
                 c = offer.application.candidate
                 candidate_name = f"{c.first_name} {c.last_name}"
@@ -237,20 +189,10 @@ async def list_offers(
 
 async def update_offer(
     offer_id: int,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     updated_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Update offer details.
-    
-    Args:
-        offer_id: The offer to update
-        updates: Dictionary of fields to update
-        updated_by: User ID who updated
-        
-    Returns:
-        Dictionary with success status
-    """
+) -> dict[str, Any]:
+    """Update offer details (draft only)."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Offer).where(Offer.id == offer_id)
@@ -260,11 +202,9 @@ async def update_offer(
         if not offer:
             return {"success": False, "error": "Offer not found"}
         
-        # Only allow updates on draft offers
         if offer.status != OfferStatus.DRAFT:
             return {"success": False, "error": "Can only update draft offers"}
         
-        # Apply updates
         allowed_fields = ["salary", "salary_currency", "start_date", "signing_bonus", 
                          "equity_percentage", "benefits", "notes"]
         
@@ -291,18 +231,8 @@ async def send_offer(
     offer_id: int,
     expires_in_days: int = 7,
     sent_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Send offer to candidate.
-    
-    Args:
-        offer_id: The offer to send
-        expires_in_days: Days until offer expires
-        sent_by: User ID who sent
-        
-    Returns:
-        Dictionary with send status
-    """
+) -> dict[str, Any]:
+    """Send offer to candidate."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Offer)
@@ -317,13 +247,10 @@ async def send_offer(
         if offer.status != OfferStatus.DRAFT:
             return {"success": False, "error": "Offer has already been sent"}
         
-        from datetime import timedelta
-        
         offer.status = OfferStatus.SENT
         offer.sent_at = datetime.utcnow()
         offer.expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=offer.application_id,
             activity_type=ApplicationActivityType.OFFER_SENT,
@@ -334,7 +261,6 @@ async def send_offer(
         
         await session.commit()
         
-        # Queue email notification
         email_queued = False
         if offer.application and offer.application.candidate:
             try:
@@ -348,7 +274,7 @@ async def send_offer(
             "success": True,
             "offer_id": offer_id,
             "status": "sent",
-            "expires_at": offer.expires_at.isoformat(),
+            "expires_at": offer.expires_at.isoformat() if offer.expires_at else None,
             "email_queued": email_queued,
         }
 
@@ -357,18 +283,8 @@ async def withdraw_offer(
     offer_id: int,
     reason: str,
     withdrawn_by: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    Withdraw an offer.
-    
-    Args:
-        offer_id: The offer to withdraw
-        reason: Reason for withdrawal
-        withdrawn_by: User ID who withdrew
-        
-    Returns:
-        Dictionary with withdrawal status
-    """
+) -> dict[str, Any]:
+    """Withdraw an offer."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Offer).where(Offer.id == offer_id)
@@ -384,7 +300,6 @@ async def withdraw_offer(
         offer.status = OfferStatus.WITHDRAWN
         offer.withdrawal_reason = reason
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=offer.application_id,
             activity_type=ApplicationActivityType.OFFER_WITHDRAWN,
@@ -407,19 +322,8 @@ async def record_offer_response(
     response: str,
     signature: Optional[str] = None,
     notes: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Record candidate's response to offer.
-    
-    Args:
-        offer_id: The offer ID
-        response: Response ('accepted' or 'declined')
-        signature: Digital signature if accepted
-        notes: Additional notes
-        
-    Returns:
-        Dictionary with response status
-    """
+) -> dict[str, Any]:
+    """Record candidate's response to offer."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Offer).where(Offer.id == offer_id)
@@ -445,7 +349,6 @@ async def record_offer_response(
         
         offer.responded_at = datetime.utcnow()
         
-        # Record activity
         activity = ApplicationActivity(
             application_id=offer.application_id,
             activity_type=activity_type,

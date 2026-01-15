@@ -21,9 +21,26 @@ from database.models.applications import (
 from database.models.candidates import Candidate
 from database.models.jobs import Job
 
+from core.cache import cache
+
+def _get_application_cache_key(func, application_id, *args, **kwargs):
+    return f"application:{application_id}"
+
+def _list_applications_cache_key(func, job_id, stage=None, status=None, *args, **kwargs):
+    parts = [f"applications:job:{job_id}"]
+    if stage:
+        parts.append(f"stage:{stage}")
+    if status:
+        parts.append(f"status:{status}")
+    # We might want to include all filters but for high-level caching this is okay
+    # For now, let's cache only based on job, stage, status to avoid explosion
+    # Or just cache by job_id if filters are complex and rely on query optimization for filters.
+    return ":".join(parts)
+
 logger = logging.getLogger(__name__)
 
 
+@cache(ttl=60, key_builder=_get_application_cache_key)
 async def get_application(application_id: int) -> Optional[Dict[str, Any]]:
     """Get detailed information about an application.
     

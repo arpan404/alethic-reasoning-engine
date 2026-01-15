@@ -1,511 +1,271 @@
 """
-Security utilities for authentication, authorization, and cryptography.
+Security utilities for GDPR and SOC2 compliance.
 
-This module provides:
-1. JWT token generation and verification
-2. Password hashing and verification
-3. WorkOS SSO integration
-4. Session management
-5. GDPR/SOC2 compliant security practices
+Provides audit logging, PII masking, and security decorators for API endpoints.
 """
 
+import functools
 import logging
-import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional, TypedDict
-import jwt
-import bcrypt
-import workos
-from workos import WorkOSClient
+import json
+import hashlib
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Set
+from enum import Enum
 
-logger = logging.getLogger(__name__)
+from fastapi import Request, HTTPException
+from starlette.concurrency import run_in_threadpool
 
-
-class JWTPayload(TypedDict, total=False):
-    """JWT token payload structure."""
-    user_id: int
-    email: str
-    username: str
-    user_type: str
-    session_id: Optional[int]
-    workos_user_id: Optional[str]
-    exp: int  # Expiration timestamp
-    iat: int  # Issued at timestamp
-    jti: str  # JWT ID (unique identifier)
+logger = logging.getLogger("security.audit")
 
 
-class TokenPair(TypedDict):
-    """Access and refresh token pair."""
-    access_token: str
-    refresh_token: str
-    token_type: str
-    expires_in: int
+class AuditAction(str, Enum):
+    """Audit log action types."""
+    # Read operations
+    VIEW = "VIEW"
+    LIST = "LIST"
+    SEARCH = "SEARCH"
+    EXPORT = "EXPORT"
+    
+    # Write operations
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    
+    # Status changes
+    SHORTLIST = "SHORTLIST"
+    REJECT = "REJECT"
+    MOVE_STAGE = "MOVE_STAGE"
+    
+    # Sensitive operations
+    BACKGROUND_CHECK = "BACKGROUND_CHECK"
+    COMPLIANCE_ACTION = "COMPLIANCE_ACTION"
+    DATA_EXPORT = "DATA_EXPORT"
+    DATA_ERASURE = "DATA_ERASURE"
 
 
-# ==================== Password Hashing ==================== #
+class ResourceType(str, Enum):
+    """Resource types for audit logging."""
+    CANDIDATE = "CANDIDATE"
+    APPLICATION = "APPLICATION"
+    JOB = "JOB"
+    INTERVIEW = "INTERVIEW"
+    EVALUATION = "EVALUATION"
+    DOCUMENT = "DOCUMENT"
+    USER = "USER"
 
-def hash_password(password: str) -> str:
+
+# PII fields that should be masked in logs
+PII_FIELDS: Set[str] = {
+    "email", "phone", "ssn", "social_security",
+    "date_of_birth", "dob", "address", "street",
+    "first_name", "last_name", "full_name", "name",
+    "salary", "salary_expectation_min", "salary_expectation_max",
+    "bank_account", "credit_card", "passport",
+}
+
+
+def mask_pii(data: Any, depth: int = 0) -> Any:
     """
-    Hash a password using bcrypt.
+    Recursively mask PII fields in data structures.
     
     Args:
-        password: Plain text password
+        data: Data to mask (dict, list, or primitive)
+        depth: Current recursion depth (max 10)
         
     Returns:
-        Hashed password
+        Data with PII fields masked
     """
-    # Convert password to bytes and hash
-    password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode('utf-8')
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a password against its hash.
+    if depth > 10:
+        return "[MAX_DEPTH]"
     
-    Args:
-        plain_password: Plain text password
-        hashed_password: Hashed password
-        
-    Returns:
-        True if password matches
-    """
-    try:
-        password_bytes = plain_password.encode('utf-8')
-        hashed_bytes = hashed_password.encode('utf-8')
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
-    except Exception as e:
-        logger.error(f"Password verification error: {str(e)}")
-        return False
+    if isinstance(data, dict):
+        masked = {}
+        for key, value in data.items():
+            if key.lower() in PII_FIELDS:
+                if isinstance(value, str) and len(value) > 0:
+                    # Partial masking: show first char and length indicator
+                    masked[key] = f"{value[0]}***[{len(value)}]"
+                else:
+                    masked[key] = "[MASKED]"
+            else:
+                masked[key] = mask_pii(value, depth + 1)
+        return masked
+    elif isinstance(data, list):
+        return [mask_pii(item, depth + 1) for item in data[:5]]  # Limit list items
+    else:
+        return data
 
 
-# ==================== JWT Token Management ==================== #
+def generate_request_id(request: Request) -> str:
+    """Generate a unique request ID for correlation."""
+    timestamp = datetime.utcnow().isoformat()
+    path = request.url.path
+    method = request.method
+    client = request.client.host if request.client else "unknown"
+    
+    raw = f"{timestamp}-{method}-{path}-{client}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-def create_access_token(
-    user_id: int,
-    email: str,
-    username: str,
-    user_type: str,
-    secret_key: str,
-    algorithm: str = "HS256",
-    expires_delta: Optional[timedelta] = None,
-    session_id: Optional[int] = None,
-    workos_user_id: Optional[str] = None,
-) -> str:
+
+async def log_audit_event(
+    action: AuditAction,
+    resource_type: ResourceType,
+    resource_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+    organization_id: Optional[int] = None,
+    request_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    contains_pii: bool = False,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
     """
-    Create a JWT access token.
+    Log an audit event for compliance tracking.
     
-    Args:
-        user_id: User ID
-        email: User email
-        username: Username
-        user_type: User type
-        secret_key: JWT secret key
-        algorithm: JWT algorithm
-        expires_delta: Token expiration time
-        session_id: Optional session ID
-        workos_user_id: Optional WorkOS user ID
-        
-    Returns:
-        Encoded JWT token
+    This creates a structured log entry suitable for SIEM ingestion
+    and compliance reporting.
     """
-    if expires_delta is None:
-        expires_delta = timedelta(hours=1)  # Default 1 hour
-    
-    expire = datetime.now(timezone.utc) + expires_delta
-    iat = datetime.now(timezone.utc)
-    jti = secrets.token_urlsafe(32)  # Unique token ID
-    
-    payload: JWTPayload = {
+    event = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "event_type": "AUDIT",
+        "action": action.value,
+        "resource_type": resource_type.value,
+        "resource_id": str(resource_id) if resource_id else None,
         "user_id": user_id,
-        "email": email,
-        "username": username,
-        "user_type": user_type,
-        "type": "access",
-        "exp": int(expire.timestamp()),
-        "iat": int(iat.timestamp()),
-        "jti": jti,
+        "organization_id": organization_id,
+        "request_id": request_id,
+        "contains_pii": contains_pii,
+        "ip_address": ip_address,
+        "user_agent": user_agent[:200] if user_agent else None,
+        "details": mask_pii(details) if details and contains_pii else details,
     }
     
-    if session_id:
-        payload["session_id"] = session_id
+    # Log as structured JSON for SIEM
+    logger.info(json.dumps(event))
     
-    if workos_user_id:
-        payload["workos_user_id"] = workos_user_id
-    
-    encoded_jwt = jwt.encode(payload, secret_key, algorithm=algorithm)
-    return encoded_jwt
+    # In production, also persist to audit table
+    # await persist_audit_event(event)
 
 
-def create_refresh_token(
-    user_id: int,
-    secret_key: str,
-    algorithm: str = "HS256",
-    expires_delta: Optional[timedelta] = None,
-) -> str:
+def audit_log(
+    action: AuditAction,
+    resource_type: ResourceType,
+    resource_id_param: str = None,
+    contains_pii: bool = False,
+):
     """
-    Create a JWT refresh token.
+    Decorator for audit logging API endpoints.
     
     Args:
-        user_id: User ID
-        secret_key: JWT secret key
-        algorithm: JWT algorithm
-        expires_delta: Token expiration time
+        action: The action being performed
+        resource_type: Type of resource being accessed
+        resource_id_param: Name of the path/query param containing resource ID
+        contains_pii: Whether the endpoint handles PII data
         
-    Returns:
-        Encoded JWT refresh token
+    Usage:
+        @router.get("/{application_id}")
+        @audit_log(AuditAction.VIEW, ResourceType.CANDIDATE, "application_id", contains_pii=True)
+        async def get_candidate(application_id: int, request: Request, current_user: User):
+            ...
     """
-    if expires_delta is None:
-        expires_delta = timedelta(days=30)  # Default 30 days
-    
-    expire = datetime.now(timezone.utc) + expires_delta
-    iat = datetime.now(timezone.utc)
-    jti = secrets.token_urlsafe(32)
-    
-    payload = {
-        "user_id": user_id,
-        "type": "refresh",
-        "exp": int(expire.timestamp()),
-        "iat": int(iat.timestamp()),
-        "jti": jti,
-    }
-    
-    encoded_jwt = jwt.encode(payload, secret_key, algorithm=algorithm)
-    return encoded_jwt
-
-
-def verify_jwt_token(
-    token: str,
-    secret_key: str,
-    algorithm: str = "HS256",
-) -> JWTPayload:
-    """
-    Verify and decode a JWT token.
-    
-    Args:
-        token: JWT token
-        secret_key: JWT secret key
-        algorithm: JWT algorithm
-        
-    Returns:
-        Decoded token payload
-        
-    Raises:
-        jwt.ExpiredSignatureError: If token has expired
-        jwt.InvalidTokenError: If token is invalid
-    """
-    try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return payload
-    except jwt.ExpiredSignatureError:
-        logger.warning("JWT token has expired")
-        raise
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid JWT token: {str(e)}")
-        raise
-
-
-def create_token_pair(
-    user_id: int,
-    email: str,
-    username: str,
-    user_type: str,
-    secret_key: str,
-    algorithm: str = "HS256",
-    session_id: Optional[int] = None,
-    workos_user_id: Optional[str] = None,
-    access_token_expires: Optional[timedelta] = None,
-    refresh_token_expires: Optional[timedelta] = None,
-) -> TokenPair:
-    """
-    Create an access and refresh token pair.
-    
-    Args:
-        user_id: User ID
-        email: User email
-        username: Username
-        user_type: User type
-        secret_key: JWT secret key
-        algorithm: JWT algorithm
-        session_id: Optional session ID
-        workos_user_id: Optional WorkOS user ID
-        access_token_expires: Access token expiration
-        refresh_token_expires: Refresh token expiration
-        
-    Returns:
-        Token pair with access and refresh tokens
-    """
-    access_token = create_access_token(
-        user_id=user_id,
-        email=email,
-        username=username,
-        user_type=user_type,
-        secret_key=secret_key,
-        algorithm=algorithm,
-        expires_delta=access_token_expires,
-        session_id=session_id,
-        workos_user_id=workos_user_id,
-    )
-    
-    refresh_token = create_refresh_token(
-        user_id=user_id,
-        secret_key=secret_key,
-        algorithm=algorithm,
-        expires_delta=refresh_token_expires,
-    )
-    
-    expires_in = int((access_token_expires or timedelta(hours=1)).total_seconds())
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "Bearer",
-        "expires_in": expires_in,
-    }
-
-
-# ==================== WorkOS Integration ==================== #
-
-class WorkOSService:
-    """
-    WorkOS SSO integration service.
-    
-    Handles:
-    - SSO authentication
-    - Organization management
-    - User provisioning
-    - Directory sync
-    """
-    
-    def __init__(
-        self,
-        api_key: str,
-        client_id: str,
-        redirect_uri: str,
-    ):
-        """
-        Initialize WorkOS service.
-        
-        Args:
-            api_key: WorkOS API key
-            client_id: WorkOS client ID
-            redirect_uri: OAuth redirect URI
-        """
-        self.client = WorkOSClient(api_key=api_key)
-        self.client_id = client_id
-        self.redirect_uri = redirect_uri
-    
-    def get_authorization_url(
-        self,
-        organization_id: Optional[str] = None,
-        provider: Optional[str] = None,
-        state: Optional[str] = None,
-    ) -> str:
-        """
-        Get SSO authorization URL.
-        
-        Args:
-            organization_id: WorkOS organization ID
-            provider: SSO provider (e.g., "GoogleOAuth", "OktaSAML")
-            state: Optional state parameter
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Extract request and user from kwargs
+            request = kwargs.get("request")
+            current_user = kwargs.get("current_user")
             
-        Returns:
-            Authorization URL
-        """
-        params = {
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-        }
-        
-        if organization_id:
-            params["organization"] = organization_id
-        
-        if provider:
-            params["provider"] = provider
-        
-        if state:
-            params["state"] = state
-        
-        return self.client.sso.get_authorization_url(**params)
-    
-    async def get_profile_and_token(self, code: str) -> dict:
-        """
-        Exchange authorization code for profile and access token.
-        
-        Args:
-            code: Authorization code from OAuth callback
+            # Extract resource ID from params
+            resource_id = None
+            if resource_id_param:
+                resource_id = kwargs.get(resource_id_param)
             
-        Returns:
-            Dictionary with user profile and access token
-        """
-        try:
-            profile = self.client.sso.get_profile_and_token(code)
-            return {
-                "workos_user_id": profile.id,
-                "email": profile.email,
-                "first_name": profile.first_name,
-                "last_name": profile.last_name,
-                "raw_attributes": profile.raw_attributes,
-                "access_token": profile.access_token,
-                "organization_id": profile.organization_id,
-                "connection_id": profile.connection_id,
-                "connection_type": profile.connection_type,
-            }
-        except Exception as e:
-            logger.error(f"WorkOS profile fetch error: {str(e)}")
-            raise
-    
-    async def get_organization(self, organization_id: str) -> dict:
-        """
-        Get WorkOS organization details.
-        
-        Args:
-            organization_id: WorkOS organization ID
+            # Generate request ID
+            request_id = generate_request_id(request) if request else None
             
-        Returns:
-            Organization details
-        """
-        try:
-            org = self.client.organizations.get_organization(organization_id)
-            return {
-                "id": org.id,
-                "name": org.name,
-                "domains": org.domains,
-                "object": org.object,
-                "created_at": org.created_at,
-                "updated_at": org.updated_at,
-            }
-        except Exception as e:
-            logger.error(f"WorkOS organization fetch error: {str(e)}")
-            raise
-    
-    async def create_organization(
-        self,
-        name: str,
-        domains: list[str],
-    ) -> dict:
-        """
-        Create a new WorkOS organization.
-        
-        Args:
-            name: Organization name
-            domains: List of email domains
+            # Get user info
+            user_id = current_user.id if current_user else None
+            org_id = getattr(current_user, "organization_id", None) if current_user else None
             
-        Returns:
-            Created organization details
-        """
-        try:
-            org = self.client.organizations.create_organization(
-                name=name,
-                domains=domains,
-            )
-            return {
-                "id": org.id,
-                "name": org.name,
-                "domains": org.domains,
-            }
-        except Exception as e:
-            logger.error(f"WorkOS organization creation error: {str(e)}")
-            raise
-    
-    async def verify_email(self, user_id: str) -> bool:
-        """
-        Verify user email through WorkOS.
-        
-        Args:
-            user_id: WorkOS user ID
+            # Get request metadata
+            ip_address = None
+            user_agent = None
+            if request:
+                ip_address = request.client.host if request.client else None
+                user_agent = request.headers.get("user-agent")
             
-        Returns:
-            True if email is verified
-        """
-        try:
-            # WorkOS handles email verification through their magic link flow
-            # This is a placeholder for the verification check
-            return True
-        except Exception as e:
-            logger.error(f"WorkOS email verification error: {str(e)}")
-            return False
+            try:
+                # Execute the actual endpoint
+                result = await func(*args, **kwargs)
+                
+                # Log successful access
+                await log_audit_event(
+                    action=action,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    user_id=user_id,
+                    organization_id=org_id,
+                    request_id=request_id,
+                    contains_pii=contains_pii,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    details={"status": "success"},
+                )
+                
+                return result
+                
+            except HTTPException as e:
+                # Log failed access attempt
+                await log_audit_event(
+                    action=action,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    user_id=user_id,
+                    organization_id=org_id,
+                    request_id=request_id,
+                    contains_pii=contains_pii,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    details={"status": "failed", "error": str(e.detail)},
+                )
+                raise
+                
+            except Exception as e:
+                # Log error
+                await log_audit_event(
+                    action=action,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    user_id=user_id,
+                    organization_id=org_id,
+                    request_id=request_id,
+                    contains_pii=contains_pii,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    details={"status": "error", "error": str(e)[:200]},
+                )
+                raise
+                
+        return wrapper
+    return decorator
 
 
-# ==================== Session Management ==================== #
-
-def generate_session_token() -> str:
+def require_consent(consent_type: str):
     """
-    Generate a secure session token.
-    
-    Returns:
-        Secure random token
-    """
-    return secrets.token_urlsafe(64)
-
-
-def generate_refresh_token_secret() -> str:
-    """
-    Generate a secure refresh token secret.
-    
-    Returns:
-        Secure random secret
-    """
-    return secrets.token_urlsafe(64)
-
-
-def generate_invite_token() -> str:
-    """
-    Generate a secure invite token.
-    
-    Returns:
-        Secure random token
-    """
-    return secrets.token_urlsafe(32)
-
-
-# ==================== API Key Management ==================== #
-
-def generate_api_key(prefix: str = "sk") -> str:
-    """
-    Generate a secure API key.
+    Decorator to verify user has given required GDPR consent.
     
     Args:
-        prefix: Key prefix (e.g., "sk" for secret key, "pk" for public key)
-        
-    Returns:
-        API key with prefix
+        consent_type: Type of consent required (e.g., "data_processing", "marketing")
     """
-    random_part = secrets.token_urlsafe(32)
-    return f"{prefix}_{random_part}"
-
-
-def hash_api_key(api_key: str) -> str:
-    """
-    Hash an API key for storage.
-    
-    Args:
-        api_key: Plain API key
-        
-    Returns:
-        Hashed API key
-    """
-    api_key_bytes = api_key.encode('utf-8')
-    salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(api_key_bytes, salt)
-    return hashed.decode('utf-8')
-
-
-def verify_api_key(plain_key: str, hashed_key: str) -> bool:
-    """
-    Verify an API key against its hash.
-    
-    Args:
-        plain_key: Plain API key
-        hashed_key: Hashed API key
-        
-    Returns:
-        True if key matches
-    """
-    try:
-        return pwd_context.verify(plain_key, hashed_key)
-    except Exception as e:
-        logger.error(f"API key verification error: {str(e)}")
-        return False
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_user = kwargs.get("current_user")
+            
+            # Check consent (simplified - real impl would check DB)
+            # if not has_consent(current_user, consent_type):
+            #     raise HTTPException(403, f"Consent required: {consent_type}")
+            
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator

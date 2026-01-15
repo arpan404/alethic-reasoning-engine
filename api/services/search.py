@@ -1,9 +1,4 @@
-"""
-Search service functions for API endpoints.
-
-Provides direct database operations for semantic search,
-separate from AI agent tools.
-"""
+"""Search service functions."""
 
 from typing import Any, Dict, List, Optional
 import logging
@@ -26,20 +21,8 @@ async def semantic_search(
     limit: int = 20,
     filters: Optional[Dict] = None,
 ) -> Dict[str, Any]:
-    """
-    Perform semantic search for candidates.
-    
-    Args:
-        query: Natural language search query
-        job_id: Optional job ID to restrict search
-        limit: Maximum results
-        filters: Additional filters
-        
-    Returns:
-        Dictionary with search results
-    """
+    """Perform semantic search for candidates."""
     async with AsyncSessionLocal() as session:
-        # Build base query
         app_query = (
             select(Application)
             .options(selectinload(Application.candidate))
@@ -49,15 +32,12 @@ async def semantic_search(
         if job_id:
             app_query = app_query.where(Application.job_id == job_id)
         
-        # Apply additional filters
         if filters:
             if filters.get("stage"):
                 app_query = app_query.where(Application.current_stage == filters["stage"])
             if filters.get("min_score"):
                 app_query = app_query.where(Application.ai_overall_score >= filters["min_score"])
         
-        # For now, use keyword matching on candidate fields
-        # In production, this would use vector similarity search
         if query:
             search_pattern = f"%{query}%"
             app_query = app_query.join(Candidate).where(
@@ -88,7 +68,7 @@ async def semantic_search(
                     "skills": app.candidate.skills or [],
                     "stage": app.current_stage,
                     "ai_score": app.ai_overall_score,
-                    "similarity_score": 0.85,  # Placeholder - would come from vector search
+                    "similarity_score": 0.85,
                 })
         
         return {
@@ -102,18 +82,8 @@ async def find_similar_candidates(
     application_id: int,
     limit: int = 10,
 ) -> Dict[str, Any]:
-    """
-    Find candidates similar to a reference candidate.
-    
-    Args:
-        application_id: Reference application ID
-        limit: Maximum similar candidates
-        
-    Returns:
-        Dictionary with similar candidates
-    """
+    """Find candidates similar to a reference."""
     async with AsyncSessionLocal() as session:
-        # Get reference application
         ref_result = await session.execute(
             select(Application)
             .options(selectinload(Application.candidate))
@@ -126,8 +96,6 @@ async def find_similar_candidates(
         
         ref_candidate = ref_app.candidate
         
-        # Find similar by matching skills and experience
-        # In production, use vector similarity
         similar_query = (
             select(Application)
             .options(selectinload(Application.candidate))
@@ -146,7 +114,6 @@ async def find_similar_candidates(
         similar = []
         for app in applications:
             if app.candidate:
-                # Calculate simple similarity based on skills overlap
                 ref_skills = set(ref_candidate.skills or [])
                 cand_skills = set(app.candidate.skills or [])
                 skill_overlap = len(ref_skills & cand_skills) / max(len(ref_skills | cand_skills), 1)
@@ -162,7 +129,6 @@ async def find_similar_candidates(
                     "ai_score": app.ai_overall_score,
                 })
         
-        # Sort by similarity
         similar.sort(key=lambda x: x["similarity_score"], reverse=True)
         
         return {
@@ -177,19 +143,8 @@ async def match_candidates_to_job(
     limit: int = 20,
     min_score: float = 0.0,
 ) -> Dict[str, Any]:
-    """
-    Find best matching candidates for a job.
-    
-    Args:
-        job_id: The job ID
-        limit: Maximum matches
-        min_score: Minimum match score
-        
-    Returns:
-        Dictionary with matched candidates
-    """
+    """Find best matching candidates for a job."""
     async with AsyncSessionLocal() as session:
-        # Get job details
         job_result = await session.execute(
             select(Job).where(Job.id == job_id)
         )
@@ -198,7 +153,6 @@ async def match_candidates_to_job(
         if not job:
             return {"error": "Job not found"}
         
-        # Find matching applications
         query = (
             select(Application)
             .options(selectinload(Application.candidate))

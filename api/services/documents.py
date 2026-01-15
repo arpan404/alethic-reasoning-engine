@@ -1,9 +1,4 @@
-"""
-Document service functions for API endpoints.
-
-Provides direct database operations for document retrieval,
-separate from AI agent tools.
-"""
+"""Document service functions."""
 
 from typing import Any, Dict, Optional
 import logging
@@ -20,15 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_resume(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get parsed resume data for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with resume data or None
-    """
+    """Get parsed resume data."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -43,7 +30,6 @@ async def get_resume(application_id: int) -> Optional[Dict[str, Any]]:
         if not application:
             return None
         
-        # Find resume file
         resume_file = None
         for f in application.files:
             if f.file_type == "resume":
@@ -53,7 +39,6 @@ async def get_resume(application_id: int) -> Optional[Dict[str, Any]]:
         if not resume_file:
             return None
         
-        # Get parsed data from candidate if available
         candidate = application.candidate
         
         return {
@@ -78,15 +63,7 @@ async def get_resume(application_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_cover_letter(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get cover letter content for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with cover letter content or None
-    """
+    """Get cover letter content."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -98,7 +75,6 @@ async def get_cover_letter(application_id: int) -> Optional[Dict[str, Any]]:
         if not application:
             return None
         
-        # Find cover letter file
         cover_letter = None
         for f in application.files:
             if f.file_type == "cover_letter":
@@ -119,15 +95,7 @@ async def get_cover_letter(application_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_linkedin_profile(application_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get LinkedIn profile data for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with LinkedIn data or None
-    """
+    """Get LinkedIn profile data."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -144,7 +112,6 @@ async def get_linkedin_profile(application_id: int) -> Optional[Dict[str, Any]]:
         if not candidate.linkedin_url:
             return {"has_linkedin": False}
         
-        # Return stored LinkedIn data
         linkedin_data = candidate.linkedin_data if hasattr(candidate, 'linkedin_data') else None
         
         return {
@@ -160,15 +127,7 @@ async def get_linkedin_profile(application_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_portfolio(application_id: int) -> Dict[str, Any]:
-    """
-    Get portfolio items for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with portfolio items
-    """
+    """Get portfolio items."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
@@ -185,7 +144,6 @@ async def get_portfolio(application_id: int) -> Dict[str, Any]:
         
         items = []
         
-        # Get portfolio files
         for f in application.files:
             if f.file_type == "portfolio":
                 items.append({
@@ -195,7 +153,6 @@ async def get_portfolio(application_id: int) -> Dict[str, Any]:
                     "uploaded_at": f.created_at.isoformat() if f.created_at else None,
                 })
         
-        # Get portfolio URL from candidate
         if application.candidate and application.candidate.portfolio_url:
             items.append({
                 "type": "url",
@@ -210,15 +167,7 @@ async def get_portfolio(application_id: int) -> Dict[str, Any]:
 
 
 async def get_all_documents(application_id: int) -> Dict[str, Any]:
-    """
-    Get all documents for an application.
-    
-    Args:
-        application_id: The application ID
-        
-    Returns:
-        Dictionary with all documents categorized
-    """
+    """Get all documents for an application."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Application)
